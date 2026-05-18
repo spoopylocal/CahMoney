@@ -58,7 +58,9 @@ const itemCatalog = [
   ["alarm", "Alarm"],
   ["laser_grid", "Laser Grid"],
   ["land_mine", "Land Mine"],
-  ["guard", "Guard"]
+  ["guard", "Guard"],
+  ["hackdevice", "Hack Device"],
+  ["void", "Void"]
 ];
 
 const boostCatalog = [

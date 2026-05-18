@@ -39,10 +39,10 @@ const bankLevels = [
   { level: 10, capacity: 50000000, upgradeCost: null }
 ];
 const bankDefenseItems = {
-  laser_grid: { name: "Laser Grid", blockChance: 0.12, consumeChance: 0.25 },
-  land_mine: { name: "Land Mine", blockChance: 0.18, consumeChance: 0.65 },
-  guard: { name: "Guard", blockChance: 0.22, consumeChance: 0.35 },
-  alarm: { name: "Alarm", blockChance: 0.08, consumeChance: 0.45 }
+  laser_grid: { name: "Laser Grid", blockChance: 0.11, consumeChance: 0.3, effect: "burn_item" },
+  land_mine: { name: "Land Mine", blockChance: 0.18, consumeChance: 0.65, effect: "fine" },
+  guard: { name: "Guard", blockChance: 0.2, consumeChance: 0.35, effect: "fine" },
+  alarm: { name: "Alarm", blockChance: 0.05, consumeChance: 0.35, effect: "alert" }
 };
 const shopItems = [
   { itemId: "stone_pickaxe", price: 3500 },
@@ -53,7 +53,9 @@ const shopItems = [
   { itemId: "alarm", price: 15000 },
   { itemId: "laser_grid", price: 45000 },
   { itemId: "land_mine", price: 70000 },
-  { itemId: "guard", price: 100000 }
+  { itemId: "guard", price: 100000 },
+  { itemId: "hackdevice", price: 100000 },
+  { itemId: "void", price: 150000 }
 ];
 
 const jobs = [
@@ -100,7 +102,9 @@ const items = [
   { id: "alarm", name: "Alarm", description: "Use it to install a bank defense.", weight: 0, sellValue: 4000, usable: true },
   { id: "laser_grid", name: "Laser Grid", description: "Use it to install a bank defense.", weight: 0, sellValue: 12000, usable: true },
   { id: "land_mine", name: "Land Mine", description: "Use it to install a bank defense.", weight: 0, sellValue: 18000, usable: true },
-  { id: "guard", name: "Guard", description: "Use it to install a bank defense.", weight: 0, sellValue: 25000, usable: true }
+  { id: "guard", name: "Guard", description: "Use it to install a bank defense.", weight: 0, sellValue: 25000, usable: true },
+  { id: "hackdevice", name: "Hack Device", description: "Use /scanbank to detect another player's bank defenses.", weight: 0, sellValue: 25000 },
+  { id: "void", name: "Void", description: "Use /voiddefense to erase one random bank defense from a player.", weight: 0, sellValue: 40000 }
 ];
 
 const itemById = new Map(items.map((item) => [item.id, item]));
@@ -551,8 +555,20 @@ function formatBankDefenses(interaction, user) {
   if (defenses.length === 0) return "None installed.";
 
   return defenses
-    .map((defense) => `${formatItem(interaction, defense.itemId, defense.quantity)} (${Math.round(defense.blockChance * 100)}% each)`)
+    .map((defense) => `${formatItem(interaction, defense.itemId, defense.quantity)} (${Math.round(defense.blockChance * 100)}% block each, ${formatDefenseEffect(defense)})`)
     .join("\n");
+}
+
+function formatDefenseEffect(defense) {
+  if (defense.effect === "alert") return "alerts the owner";
+  if (defense.effect === "burn_item") return "burns a robber item";
+  return "raises the robber fine";
+}
+
+function getSpecificDefense(user, itemId) {
+  const defense = bankDefenseItems[itemId];
+  const quantity = Math.max(0, Math.floor(Number(user.bankDefenses?.[itemId]) || 0));
+  return defense && quantity > 0 ? { itemId, quantity, ...defense } : null;
 }
 
 function consumeTriggeredDefense(user) {
@@ -573,6 +589,52 @@ function consumeTriggeredDefense(user) {
   }
 
   return { ...triggered, consumed };
+}
+
+function consumeSpecificDefense(user, itemId) {
+  const defense = getSpecificDefense(user, itemId);
+  if (!defense) return null;
+
+  const consumed = Math.random() < defense.consumeChance;
+  if (consumed) {
+    user.bankDefenses[itemId] -= 1;
+    if (user.bankDefenses[itemId] <= 0) delete user.bankDefenses[itemId];
+  }
+
+  return { ...defense, consumed };
+}
+
+function removeRandomBankDefense(user) {
+  const defenses = getBankDefenseEntries(user);
+  if (defenses.length === 0) return null;
+
+  const totalQuantity = defenses.reduce((sum, defense) => sum + defense.quantity, 0);
+  let roll = randomInt(1, totalQuantity);
+  const removed = defenses.find((defense) => {
+    roll -= defense.quantity;
+    return roll <= 0;
+  }) || defenses[defenses.length - 1];
+
+  user.bankDefenses[removed.itemId] -= 1;
+  if (user.bankDefenses[removed.itemId] <= 0) delete user.bankDefenses[removed.itemId];
+
+  return removed;
+}
+
+function removeRandomInventoryItem(user) {
+  user.inventory ||= {};
+  const entries = Object.entries(user.inventory).filter(([, quantity]) => Math.floor(Number(quantity) || 0) > 0);
+  if (entries.length === 0) return null;
+
+  const totalQuantity = entries.reduce((sum, [, quantity]) => sum + Math.floor(Number(quantity) || 0), 0);
+  let roll = randomInt(1, totalQuantity);
+  const [itemId] = entries.find(([, quantity]) => {
+    roll -= Math.floor(Number(quantity) || 0);
+    return roll <= 0;
+  }) || entries[entries.length - 1];
+
+  removeItem(user, itemId);
+  return itemId;
 }
 
 function payFromWalletThenBank(user, amount) {
@@ -1877,6 +1939,7 @@ const commands = [
 
         robber.lastBankrob = Date.now();
         const successChance = getBankrobSuccessChance(victim);
+        const alarm = consumeSpecificDefense(victim, "alarm");
         const roll = Math.random();
 
         if (roll < successChance) {
@@ -1890,6 +1953,7 @@ const commands = [
             message: `You cracked the bank vibes and stole ${formatBankMoney(interaction, stolen)} from ${target.username}.`,
             color: 0x57f287,
             coins: stolen,
+            alarm,
             successChance,
             xp,
             totalExperience: robber.experience
@@ -1902,13 +1966,16 @@ const commands = [
           if (defense) {
             const fine = payFromWalletThenBank(robber, randomInt(350, 1250));
             const xp = addExperience(robber, 3, 8);
+            const burnedItemId = defense.effect === "burn_item" ? removeRandomInventoryItem(robber) : null;
             victim.wallet += fine;
 
             return {
               title: "Bankrob Blocked",
-              message: `${target.username}'s ${formatItem(interaction, defense.itemId)} stopped the bankrob. You paid ${target.username} ${formatMoney(interaction, fine)}.${defense.consumed ? " The defense was used up." : ""}`,
+              message: `${target.username}'s ${formatItem(interaction, defense.itemId)} stopped the bankrob. You paid ${target.username} ${formatMoney(interaction, fine)}.${burnedItemId ? ` Your ${formatItem(interaction, burnedItemId)} was burned by the laser grid.` : ""}${defense.consumed ? " The defense was used up." : ""}`,
               color: 0xed4245,
               coins: fine,
+              alarm,
+              burnedItemId,
               defenseId: defense.itemId,
               defenseConsumed: defense.consumed,
               successChance,
@@ -1927,19 +1994,129 @@ const commands = [
           message: `You got caught and paid ${target.username} ${formatMoney(interaction, fine)}.`,
           color: 0xed4245,
           coins: fine,
+          alarm,
           successChance,
           xp,
           totalExperience: robber.experience
         };
       });
 
+      const fields = [
+        ...(outcome.coins ? [{ name: "Coins Moved", value: formatMoney(interaction, outcome.coins), inline: true }] : []),
+        ...(typeof outcome.successChance === "number" ? [{ name: "Success Chance", value: `${Math.round(outcome.successChance * 100)}%`, inline: true }] : []),
+        ...(outcome.defenseId ? [{ name: "Defense", value: `${formatItem(interaction, outcome.defenseId)}${outcome.defenseConsumed ? " used up" : " held"}`, inline: true }] : []),
+        ...(outcome.burnedItemId ? [{ name: "Item Burned", value: formatItem(interaction, outcome.burnedItemId), inline: true }] : []),
+        ...(outcome.alarm ? [{ name: "Alarm", value: `${target.username} was alerted that ${interaction.user.username} tried a bankrob.${outcome.alarm.consumed ? " Alarm used up." : ""}`, inline: false }] : []),
+        ...xpFields(interaction, outcome)
+      ];
+
+      await interaction.reply({
+        ...(outcome.alarm ? { content: `<@${target.id}> Bank alarm: ${interaction.user.username} tried to rob your bank.` } : {}),
+        embeds: [makeEmbed(interaction, outcome.title, outcome.message, { color: outcome.color, fields })],
+        allowedMentions: outcome.alarm ? { users: [target.id] } : { parse: [] }
+      });
+    }
+  },
+  {
+    data: new SlashCommandBuilder()
+      .setName("scanbank")
+      .setDescription("Use a Hack Device to scan another user's bank defenses.")
+      .addUserOption((option) =>
+        option.setName("user").setDescription("User to scan.").setRequired(true)
+      ),
+    async execute(interaction) {
+      const target = interaction.options.getUser("user");
+
+      if (target.bot) {
+        await replyEmbed(interaction, "Scan Failed", "Pick a real user to scan.", {
+          color: 0xed4245
+        });
+        return;
+      }
+
+      const outcome = await withStore((store) => {
+        const scanner = getUser(store, interaction.user.id);
+        const targetUser = getUser(store, target.id);
+
+        if (!removeItem(scanner, "hackdevice")) {
+          return {
+            title: "Scan Failed",
+            message: `You need ${formatItem(interaction, "hackdevice")} to scan bank defenses.`,
+            color: 0xed4245
+          };
+        }
+
+        const defenses = getBankDefenseEntries(targetUser);
+        return {
+          title: "Bank Scan Complete",
+          message: defenses.length > 0
+            ? `Detected defenses on ${target.username}'s bank.`
+            : `${target.username}'s bank has no installed defenses.`,
+          color: defenses.length > 0 ? 0x57f287 : 0xfee75c,
+          targetUser
+        };
+      });
+
+      await replyEmbed(interaction, outcome.title, outcome.message, {
+        color: outcome.color,
+        fields: outcome.targetUser ? [
+          { name: "Defenses", value: formatBankDefenses(interaction, outcome.targetUser), inline: false }
+        ] : []
+      });
+    }
+  },
+  {
+    data: new SlashCommandBuilder()
+      .setName("voiddefense")
+      .setDescription("Use a Void to remove one random bank defense from a user.")
+      .addUserOption((option) =>
+        option.setName("user").setDescription("User whose bank defense you want to remove.").setRequired(true)
+      ),
+    async execute(interaction) {
+      const target = interaction.options.getUser("user");
+
+      if (target.bot || target.id === interaction.user.id) {
+        await replyEmbed(interaction, "Void Failed", "Pick a real target who is not you.", {
+          color: 0xed4245
+        });
+        return;
+      }
+
+      const outcome = await withStore((store) => {
+        const attacker = getUser(store, interaction.user.id);
+        const victim = getUser(store, target.id);
+
+        if (!removeItem(attacker, "void")) {
+          return {
+            title: "Void Failed",
+            message: `You need ${formatItem(interaction, "void")} to remove a bank defense.`,
+            color: 0xed4245
+          };
+        }
+
+        const removed = removeRandomBankDefense(victim);
+        if (!removed) {
+          return {
+            title: "Void Fizzled",
+            message: `${target.username}'s bank had no defenses to remove. The ${formatItem(interaction, "void")} collapsed anyway.`,
+            color: 0xfee75c
+          };
+        }
+
+        return {
+          title: "Defense Voided",
+          message: `Removed one ${formatItem(interaction, removed.itemId)} from ${target.username}'s bank defenses.`,
+          color: 0x57f287,
+          removedId: removed.itemId,
+          victim
+        };
+      });
+
       await replyEmbed(interaction, outcome.title, outcome.message, {
         color: outcome.color,
         fields: [
-          ...(outcome.coins ? [{ name: "Coins Moved", value: formatMoney(interaction, outcome.coins), inline: true }] : []),
-          ...(typeof outcome.successChance === "number" ? [{ name: "Success Chance", value: `${Math.round(outcome.successChance * 100)}%`, inline: true }] : []),
-          ...(outcome.defenseId ? [{ name: "Defense", value: `${formatItem(interaction, outcome.defenseId)}${outcome.defenseConsumed ? " used up" : " held"}`, inline: true }] : []),
-          ...xpFields(interaction, outcome)
+          ...(outcome.removedId ? [{ name: "Removed", value: formatItem(interaction, outcome.removedId), inline: true }] : []),
+          ...(outcome.victim ? [{ name: "Remaining Defenses", value: formatBankDefenses(interaction, outcome.victim), inline: false }] : [])
         ]
       });
     }
@@ -2282,7 +2459,7 @@ const commands = [
           };
         }
 
-        if (!bankDefenseItems[itemId] && (user.inventory?.[itemId] || 0) > 0) {
+        if (!bankDefenseItems[itemId] && !["hackdevice", "void"].includes(itemId) && (user.inventory?.[itemId] || 0) > 0) {
           return {
             title: "Purchase Failed",
             message: `You already own ${formatItem(interaction, itemId)}.`,

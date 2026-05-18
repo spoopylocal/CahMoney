@@ -47,7 +47,9 @@ const config = {
     laser_grid: process.env.ITEM_LASER_GRID_EMOJI || null,
     land_mine: process.env.ITEM_LAND_MINE_EMOJI || null,
     guard: process.env.ITEM_GUARD_EMOJI || null,
-    alarm: process.env.ITEM_ALARM_EMOJI || null
+    alarm: process.env.ITEM_ALARM_EMOJI || null,
+    hackdevice: process.env.ITEM_HACKDEVICE_EMOJI || null,
+    void: process.env.ITEM_VOID_EMOJI || null
   },
   cardEmojis: {
     1: process.env.CARD_1_EMOJI || null,

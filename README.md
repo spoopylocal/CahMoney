@@ -65,6 +65,8 @@ npm start
 - `/withdraw amount` - Move coins from bank to wallet.
 - `/rob user` - Try to rob another user.
 - `/bankrob user` - Try to steal from another user's bank.
+- `/scanbank user` - Spend a Hack Device to scan a user's bank defenses.
+- `/voiddefense user` - Spend a Void to remove one random bank defense.
 - `/shop` and `/buy` - Buy pickaxes and bank defense items.
 - `/use item` - Use potions, charms, mystery blocks, or install bank defenses.
 - `/hunt` - Hunt for random items.
