@@ -5,6 +5,9 @@ const config = {
   clientId: process.env.CLIENT_ID,
   guildId: process.env.GUILD_ID || null,
   dataDir: process.env.DATA_DIR || "data",
+  adminHost: process.env.ADMIN_HOST || "127.0.0.1",
+  adminPort: process.env.ADMIN_PORT ? Number.parseInt(process.env.ADMIN_PORT, 10) : null,
+  adminToken: process.env.ADMIN_TOKEN || null,
   moneyEmoji: process.env.MONEY_EMOJI || null,
   expEmoji: process.env.EXP_EMOJI || null,
   itemEmojis: {
