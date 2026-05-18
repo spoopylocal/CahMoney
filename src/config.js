@@ -4,8 +4,7 @@ const config = {
   token: process.env.DISCORD_TOKEN,
   clientId: process.env.CLIENT_ID,
   guildId: process.env.GUILD_ID || null,
-  mongoUri: process.env.MONGODB_URI,
-  mongoDb: process.env.MONGODB_DB || "economybot",
+  dataDir: process.env.DATA_DIR || "data",
   moneyEmoji: process.env.MONEY_EMOJI || null,
   expEmoji: process.env.EXP_EMOJI || null,
   itemEmojis: {
@@ -59,7 +58,6 @@ function assertConfig(options = {}) {
 
   if (!config.token) missing.push("DISCORD_TOKEN");
   if (!config.clientId) missing.push("CLIENT_ID");
-  if (options.mongo && !config.mongoUri) missing.push("MONGODB_URI");
 
   if (missing.length > 0) {
     throw new Error(`Missing required env value(s): ${missing.join(", ")}`);
