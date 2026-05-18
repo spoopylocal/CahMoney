@@ -3,7 +3,7 @@ const { commands } = require("./commands");
 const { config, assertConfig } = require("./config");
 const { closeStore, connectStore } = require("./economyStore");
 
-assertConfig({ mongo: true });
+assertConfig();
 
 const client = new Client({
   intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildEmojisAndStickers]
@@ -48,8 +48,8 @@ client.on(Events.InteractionCreate, async (interaction) => {
 });
 
 async function main() {
-  await connectStore();
-  console.log(`Connected to MongoDB database "${config.mongoDb}".`);
+  const storePath = await connectStore();
+  console.log(`Using economy data file "${storePath}".`);
   await client.login(config.token);
 }
 
