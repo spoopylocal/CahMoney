@@ -16,12 +16,13 @@ npm install
 
 2. Copy `.env.example` to `.env` and add your new rotated token.
 
-3. Add your MongoDB connection string to `.env`.
+3. Choose where economy data should be stored.
 
 ```bash
-MONGODB_URI=mongodb+srv://username:password@cluster.mongodb.net/economybot?retryWrites=true&w=majority
-MONGODB_DB=economybot
+DATA_DIR=data
 ```
+
+The bot writes economy data to `DATA_DIR/economy.json`. Keep this folder backed up on your host.
 
 4. Deploy slash commands:
 
