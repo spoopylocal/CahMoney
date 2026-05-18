@@ -1,4 +1,5 @@
-const { MongoClient } = require("mongodb");
+const fs = require("node:fs/promises");
+const path = require("node:path");
 const { config } = require("./config");
 
 const DEFAULT_USER = {
@@ -18,54 +19,71 @@ const DEFAULT_USER = {
   lastMine: 0
 };
 
-let client;
-let collection;
+const dataDir = path.resolve(process.cwd(), config.dataDir);
+const storePath = path.join(dataDir, "economy.json");
+let storeQueue = Promise.resolve();
+
+function normalizeStore(store) {
+  const normalized = {
+    users: {}
+  };
+
+  for (const [userId, user] of Object.entries(store?.users || {})) {
+    normalized.users[userId] = { ...DEFAULT_USER, ...user };
+  }
+
+  return normalized;
+}
+
+async function writeStore(store) {
+  await fs.mkdir(dataDir, { recursive: true });
+
+  const tempPath = `${storePath}.${process.pid}.tmp`;
+  await fs.writeFile(tempPath, `${JSON.stringify(store, null, 2)}\n`, "utf8");
+  await fs.copyFile(tempPath, storePath);
+  await fs.rm(tempPath, { force: true });
+}
+
+async function readStore() {
+  await fs.mkdir(dataDir, { recursive: true });
+
+  try {
+    const raw = await fs.readFile(storePath, "utf8");
+    return normalizeStore(JSON.parse(raw));
+  } catch (error) {
+    if (error.code === "ENOENT") {
+      const emptyStore = normalizeStore({ users: {} });
+      await writeStore(emptyStore);
+      return emptyStore;
+    }
+
+    if (error instanceof SyntaxError) {
+      throw new Error(`Could not parse economy data file at ${storePath}.`);
+    }
+
+    throw error;
+  }
+}
 
 async function connectStore() {
-  if (collection) return collection;
-
-  client = new MongoClient(config.mongoUri);
-  await client.connect();
-
-  const db = client.db(config.mongoDb);
-  collection = db.collection("users");
-  await collection.createIndex({ wallet: -1, bank: -1 });
-
-  return collection;
+  await readStore();
+  return storePath;
 }
 
 async function closeStore() {
-  if (client) {
-    await client.close();
-    client = null;
-    collection = null;
-  }
+  await storeQueue;
 }
 
 async function withStore(mutator) {
-  const users = await connectStore();
-  const docs = await users.find({}).toArray();
-  const store = { users: {} };
+  const operation = storeQueue.then(async () => {
+    const store = await readStore();
+    const result = await mutator(store);
+    await writeStore(store);
+    return result;
+  });
 
-  for (const doc of docs) {
-    const { _id, ...user } = doc;
-    store.users[_id] = { ...DEFAULT_USER, ...user };
-  }
-
-  const result = mutator(store);
-  const writes = Object.entries(store.users).map(([userId, user]) => ({
-    updateOne: {
-      filter: { _id: userId },
-      update: { $set: user },
-      upsert: true
-    }
-  }));
-
-  if (writes.length > 0) {
-    await users.bulkWrite(writes);
-  }
-
-  return result;
+  storeQueue = operation.catch(() => {});
+  return operation;
 }
 
 function getUser(store, userId) {
