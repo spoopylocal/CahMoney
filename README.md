@@ -24,7 +24,23 @@ DATA_DIR=data
 
 The bot writes economy data to `DATA_DIR/economy.json`. Keep this folder backed up on your host.
 
-4. Deploy slash commands:
+4. Optionally enable the admin web editor.
+
+```bash
+ADMIN_HOST=127.0.0.1
+ADMIN_PORT=3001
+ADMIN_TOKEN=put_a_long_random_admin_password_here
+```
+
+With the default host, open it through an SSH tunnel:
+
+```bash
+ssh -L 3001:127.0.0.1:3001 user@your-server
+```
+
+Then visit `http://127.0.0.1:3001`.
+
+5. Deploy slash commands:
 
 ```bash
 npm run deploy
@@ -32,7 +48,7 @@ npm run deploy
 
 For faster testing, add `GUILD_ID` to `.env`. Without `GUILD_ID`, commands are deployed globally and can take longer to appear.
 
-5. Start the bot:
+6. Start the bot:
 
 ```bash
 npm start
@@ -42,8 +58,8 @@ npm start
 
 - `/balance` - Check your wallet and bank.
 - `/beg` - Beg for coins with random outcomes.
-- `/work` - Work a goofy job for money.
-- `/daily` - Claim a daily reward.
+- `/work` - Work a goofy job for coins.
+- `/daily` - Claim your daily coins.
 - `/deposit amount` - Move coins from wallet to bank.
 - `/withdraw amount` - Move coins from bank to wallet.
 - `/rob user` - Try to rob another user.
