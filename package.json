@@ -5,7 +5,8 @@
   "main": "src/index.js",
   "scripts": {
     "start": "node src/index.js",
-    "deploy": "node src/deploy-commands.js"
+    "deploy": "node src/deploy-commands.js",
+    "migrate:mongo": "node scripts/migrate-mongo-to-file.js"
   },
   "keywords": [
     "discord",
@@ -16,6 +17,7 @@
   "license": "MIT",
   "dependencies": {
     "discord.js": "^14.19.3",
-    "dotenv": "^16.5.0"
+    "dotenv": "^16.5.0",
+    "mongodb": "^7.2.0"
   }
 }
