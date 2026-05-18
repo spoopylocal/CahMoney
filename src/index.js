@@ -2,8 +2,10 @@ const { Client, Collection, Events, GatewayIntentBits } = require("discord.js");
 const { commands } = require("./commands");
 const { config, assertConfig } = require("./config");
 const { closeStore, connectStore } = require("./economyStore");
+const { startAdminServer } = require("./adminServer");
 
 assertConfig();
+let adminServer = null;
 
 const client = new Client({
   intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildEmojisAndStickers]
@@ -50,15 +52,18 @@ client.on(Events.InteractionCreate, async (interaction) => {
 async function main() {
   const storePath = await connectStore();
   console.log(`Using economy data file "${storePath}".`);
+  adminServer = startAdminServer();
   await client.login(config.token);
 }
 
 process.on("SIGINT", async () => {
+  if (adminServer) adminServer.close();
   await closeStore();
   process.exit(0);
 });
 
 process.on("SIGTERM", async () => {
+  if (adminServer) adminServer.close();
   await closeStore();
   process.exit(0);
 });
