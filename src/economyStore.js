@@ -5,6 +5,8 @@ const { config } = require("./config");
 const DEFAULT_USER = {
   wallet: 0,
   bank: 0,
+  bankLevel: 1,
+  bankDefenses: {},
   experience: 0,
   inventory: {},
   boosts: {},

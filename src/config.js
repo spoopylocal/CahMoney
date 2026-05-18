@@ -9,6 +9,7 @@ const config = {
   adminPort: process.env.ADMIN_PORT ? Number.parseInt(process.env.ADMIN_PORT, 10) : null,
   adminToken: process.env.ADMIN_TOKEN || null,
   moneyEmoji: process.env.MONEY_EMOJI || null,
+  bankEmoji: process.env.BANK_EMOJI || null,
   expEmoji: process.env.EXP_EMOJI || null,
   itemEmojis: {
     xp_potion: process.env.ITEM_XP_POTION_EMOJI || null,
@@ -36,7 +37,17 @@ const config = {
     emerald: process.env.ITEM_EMERALD_EMOJI || null,
     end_stone: process.env.ITEM_END_STONE_EMOJI || null,
     netherite_ingot: process.env.ITEM_NETHERITE_INGOT_EMOJI || null,
-    ruby: process.env.ITEM_RUBY_EMOJI || null
+    ruby: process.env.ITEM_RUBY_EMOJI || null,
+    pebble: process.env.ITEM_PEBBLE_EMOJI || null,
+    fries: process.env.ITEM_FRIES_EMOJI || null,
+    crown: process.env.ITEM_CROWN_EMOJI || null,
+    cd: process.env.ITEM_CD_EMOJI || null,
+    burger: process.env.ITEM_BURGER_EMOJI || null,
+    boots: process.env.ITEM_BOOTS_EMOJI || null,
+    laser_grid: process.env.ITEM_LASER_GRID_EMOJI || null,
+    land_mine: process.env.ITEM_LAND_MINE_EMOJI || null,
+    guard: process.env.ITEM_GUARD_EMOJI || null,
+    alarm: process.env.ITEM_ALARM_EMOJI || null
   },
   cardEmojis: {
     1: process.env.CARD_1_EMOJI || null,

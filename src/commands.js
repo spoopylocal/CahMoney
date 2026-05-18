@@ -25,12 +25,35 @@ const MINE_COOLDOWN = 45 * 1000;
 const LUCKY_CHARM_DURATION = 5 * 60 * 1000;
 const PAGE_SIZE = 5;
 const DEV_USER_ID = "749345623785996489";
+const BANKROB_BASE_SUCCESS_CHANCE = 0.28;
+const bankLevels = [
+  { level: 1, capacity: 25000, upgradeCost: 30000 },
+  { level: 2, capacity: 75000, upgradeCost: 85000 },
+  { level: 3, capacity: 150000, upgradeCost: 200000 },
+  { level: 4, capacity: 500000, upgradeCost: 650000 },
+  { level: 5, capacity: 1000000, upgradeCost: 1300000 },
+  { level: 6, capacity: 2500000, upgradeCost: 3250000 },
+  { level: 7, capacity: 5000000, upgradeCost: 6500000 },
+  { level: 8, capacity: 10000000, upgradeCost: 13000000 },
+  { level: 9, capacity: 25000000, upgradeCost: 30000000 },
+  { level: 10, capacity: 50000000, upgradeCost: null }
+];
+const bankDefenseItems = {
+  laser_grid: { name: "Laser Grid", blockChance: 0.12, consumeChance: 0.25 },
+  land_mine: { name: "Land Mine", blockChance: 0.18, consumeChance: 0.65 },
+  guard: { name: "Guard", blockChance: 0.22, consumeChance: 0.35 },
+  alarm: { name: "Alarm", blockChance: 0.08, consumeChance: 0.45 }
+};
 const shopItems = [
   { itemId: "stone_pickaxe", price: 3500 },
   { itemId: "iron_pickaxe", price: 10250 },
   { itemId: "gold_pickaxe", price: 25000 },
   { itemId: "diamond_pickaxe", price: 45000 },
-  { itemId: "netherite_pickaxe", price: 125000 }
+  { itemId: "netherite_pickaxe", price: 125000 },
+  { itemId: "alarm", price: 15000 },
+  { itemId: "laser_grid", price: 45000 },
+  { itemId: "land_mine", price: 70000 },
+  { itemId: "guard", price: 100000 }
 ];
 
 const jobs = [
@@ -67,7 +90,17 @@ const items = [
   { id: "emerald", name: "Emerald", description: "Villager-approved sparkle.", weight: 0, sellValue: 1400 },
   { id: "end_stone", name: "End Stone", description: "A block from somewhere inconvenient.", weight: 0, sellValue: 1800 },
   { id: "netherite_ingot", name: "Netherite Ingot", description: "Dense, rare, and showing off.", weight: 0, sellValue: 3500 },
-  { id: "ruby", name: "Ruby", description: "Red, rare, and financially loud.", weight: 0, sellValue: 5000 }
+  { id: "ruby", name: "Ruby", description: "Red, rare, and financially loud.", weight: 0, sellValue: 5000 },
+  { id: "pebble", name: "Pebble", description: "Tiny, humble, and technically loot.", weight: 38, sellValue: 8 },
+  { id: "fries", name: "Fries", description: "A salty little snack with resale value somehow.", weight: 30, sellValue: 25 },
+  { id: "cd", name: "CD", description: "Possibly music. Possibly a coaster.", weight: 26, sellValue: 40 },
+  { id: "burger", name: "Burger", description: "Found food. Economically brave.", weight: 24, sellValue: 55 },
+  { id: "boots", name: "Boots", description: "Only lightly cursed by the trail.", weight: 18, sellValue: 90 },
+  { id: "crown", name: "Crown", description: "Royal-looking enough to cause problems.", weight: 3, sellValue: 1750 },
+  { id: "alarm", name: "Alarm", description: "Use it to install a bank defense.", weight: 0, sellValue: 4000, usable: true },
+  { id: "laser_grid", name: "Laser Grid", description: "Use it to install a bank defense.", weight: 0, sellValue: 12000, usable: true },
+  { id: "land_mine", name: "Land Mine", description: "Use it to install a bank defense.", weight: 0, sellValue: 18000, usable: true },
+  { id: "guard", name: "Guard", description: "Use it to install a bank defense.", weight: 0, sellValue: 25000, usable: true }
 ];
 
 const itemById = new Map(items.map((item) => [item.id, item]));
@@ -219,6 +252,10 @@ function getEmoji(interaction, name, fallback, configuredEmoji = null) {
 
 function formatMoney(interaction, amount) {
   return `${getEmoji(interaction, "money", "money", config.moneyEmoji)} ${formatCoins(amount)}`;
+}
+
+function formatBankMoney(interaction, amount) {
+  return `${getEmoji(interaction, "bank", "bank", config.bankEmoji)} ${formatCoins(amount)}`;
 }
 
 function formatExperience(interaction, amount) {
@@ -470,6 +507,74 @@ function removeItem(user, itemId, quantity = 1) {
   return true;
 }
 
+function normalizeBankLevel(user) {
+  const level = Math.floor(Number(user.bankLevel) || 1);
+  user.bankLevel = Math.min(bankLevels.length, Math.max(1, level));
+  return user.bankLevel;
+}
+
+function getBankLevelInfo(user) {
+  return bankLevels[normalizeBankLevel(user) - 1];
+}
+
+function getNextBankLevelInfo(user) {
+  const level = normalizeBankLevel(user);
+  return bankLevels[level] || null;
+}
+
+function getBankSpace(user) {
+  return Math.max(0, getBankLevelInfo(user).capacity - user.bank);
+}
+
+function getBankDefenseEntries(user) {
+  user.bankDefenses ||= {};
+  return Object.entries(user.bankDefenses)
+    .map(([itemId, quantity]) => {
+      const defense = bankDefenseItems[itemId];
+      const amount = Math.max(0, Math.floor(Number(quantity) || 0));
+      return defense && amount > 0 ? { itemId, quantity: amount, ...defense } : null;
+    })
+    .filter(Boolean);
+}
+
+function getBankDefenseBlockChance(user) {
+  const total = getBankDefenseEntries(user).reduce((sum, defense) => sum + defense.blockChance * defense.quantity, 0);
+  return Math.min(0.23, total);
+}
+
+function getBankrobSuccessChance(victim) {
+  return Math.max(0.05, BANKROB_BASE_SUCCESS_CHANCE - getBankDefenseBlockChance(victim));
+}
+
+function formatBankDefenses(interaction, user) {
+  const defenses = getBankDefenseEntries(user);
+  if (defenses.length === 0) return "None installed.";
+
+  return defenses
+    .map((defense) => `${formatItem(interaction, defense.itemId, defense.quantity)} (${Math.round(defense.blockChance * 100)}% each)`)
+    .join("\n");
+}
+
+function consumeTriggeredDefense(user) {
+  const defenses = getBankDefenseEntries(user);
+  if (defenses.length === 0) return null;
+
+  const totalWeight = defenses.reduce((sum, defense) => sum + defense.blockChance * defense.quantity, 0);
+  let roll = Math.random() * totalWeight;
+  const triggered = defenses.find((defense) => {
+    roll -= defense.blockChance * defense.quantity;
+    return roll <= 0;
+  }) || defenses[defenses.length - 1];
+  const consumed = Math.random() < triggered.consumeChance;
+
+  if (consumed) {
+    user.bankDefenses[triggered.itemId] -= 1;
+    if (user.bankDefenses[triggered.itemId] <= 0) delete user.bankDefenses[triggered.itemId];
+  }
+
+  return { ...triggered, consumed };
+}
+
 function payFromWalletThenBank(user, amount) {
   const paid = Math.min(user.wallet + user.bank, amount);
   const walletPayment = Math.min(user.wallet, paid);
@@ -550,6 +655,18 @@ function useInventoryItem(interaction, user, itemId) {
       title: "Lucky Charm Used",
       message: `${formatItem(interaction, itemId)} activated. You have +20% luck for 5 minutes.`,
       color: 0x57f287
+    };
+  }
+
+  if (bankDefenseItems[itemId]) {
+    user.bankDefenses ||= {};
+    user.bankDefenses[itemId] = (user.bankDefenses[itemId] || 0) + 1;
+
+    return {
+      title: "Bank Defense Installed",
+      message: `${formatItem(interaction, itemId)} is now defending your bank.`,
+      color: 0x57f287,
+      defenseId: itemId
     };
   }
 
@@ -1275,9 +1392,13 @@ const commands = [
 
       const result = await withStore((store) => {
         const user = getUser(store, target.id);
+        const bankLevel = getBankLevelInfo(user);
         return {
           wallet: user.wallet,
           bank: user.bank,
+          bankLevel: bankLevel.level,
+          bankCapacity: bankLevel.capacity,
+          bankDefenseChance: getBankDefenseBlockChance(user),
           netWorth: getNetWorth(user),
           experience: user.experience
         };
@@ -1287,7 +1408,12 @@ const commands = [
         color: 0x57f287,
         fields: [
           { name: "Wallet", value: formatMoney(interaction, result.wallet), inline: true },
-          { name: "Bank", value: formatMoney(interaction, result.bank), inline: true },
+          {
+            name: "Bank",
+            value: `${formatBankMoney(interaction, result.bank)} / ${formatCoins(result.bankCapacity)}\nLevel ${result.bankLevel}`,
+            inline: true
+          },
+          { name: "Bank Defense", value: `${Math.round(result.bankDefenseChance * 100)}% block bonus`, inline: true },
           { name: "Net Worth", value: formatMoney(interaction, result.netWorth), inline: true },
           {
             name: "Experience",
@@ -1465,6 +1591,85 @@ const commands = [
   },
   {
     data: new SlashCommandBuilder()
+      .setName("bank")
+      .setDescription("View or upgrade your bank storage.")
+      .addStringOption((option) =>
+        option
+          .setName("action")
+          .setDescription("What to do.")
+          .setRequired(false)
+          .addChoices({ name: "Info", value: "info" }, { name: "Upgrade", value: "upgrade" })
+      ),
+    async execute(interaction) {
+      const action = interaction.options.getString("action") || "info";
+      const outcome = await withStore((store) => {
+        const user = getUser(store, interaction.user.id);
+        const current = getBankLevelInfo(user);
+        const next = getNextBankLevelInfo(user);
+
+        if (action === "upgrade") {
+          if (!next) {
+            return {
+              title: "Bank Maxed",
+              message: "Your bank is already level 10.",
+              color: 0xfee75c,
+              current,
+              next,
+              user
+            };
+          }
+
+          if (user.wallet < current.upgradeCost) {
+            return {
+              title: "Bank Upgrade Failed",
+              message: `You need ${formatMoney(interaction, current.upgradeCost)} in your wallet to upgrade to level ${next.level}.`,
+              color: 0xed4245,
+              current,
+              next,
+              user
+            };
+          }
+
+          user.wallet -= current.upgradeCost;
+          user.bankLevel = next.level;
+
+          return {
+            title: "Bank Upgraded",
+            message: `Your bank is now level ${next.level} with ${formatCoins(next.capacity)} max storage.`,
+            color: 0x57f287,
+            current: next,
+            next: getNextBankLevelInfo(user),
+            user
+          };
+        }
+
+        return {
+          title: "Bank",
+          message: "Your bank storage and defenses.",
+          color: 0x5865f2,
+          current,
+          next,
+          user
+        };
+      });
+
+      const nextText = outcome.next
+        ? `Level ${outcome.next.level}: ${formatCoins(outcome.next.capacity)} max\nUpgrade cost: ${formatMoney(interaction, outcome.current.upgradeCost)}`
+        : "Max level reached.";
+
+      await replyEmbed(interaction, outcome.title, outcome.message, {
+        color: outcome.color,
+        fields: [
+          { name: "Storage", value: `${formatBankMoney(interaction, outcome.user.bank)} / ${formatCoins(outcome.current.capacity)}`, inline: true },
+          { name: "Level", value: `${outcome.current.level} / ${bankLevels.length}`, inline: true },
+          { name: "Next Upgrade", value: nextText, inline: true },
+          { name: "Defenses", value: formatBankDefenses(interaction, outcome.user), inline: false }
+        ]
+      });
+    }
+  },
+  {
+    data: new SlashCommandBuilder()
       .setName("deposit")
       .setDescription("Deposit wallet coins into the bank.")
       .addStringOption((option) =>
@@ -1474,9 +1679,11 @@ const commands = [
       const rawAmount = interaction.options.getString("amount");
       const outcome = await withStore((store) => {
         const user = getUser(store, interaction.user.id);
-        const amount = rawAmount.toLowerCase() === "all" ? user.wallet : Number.parseInt(rawAmount, 10);
+        const bankSpace = getBankSpace(user);
+        const requestedAmount = rawAmount.toLowerCase() === "all" ? user.wallet : Number.parseInt(rawAmount, 10);
+        const amount = rawAmount.toLowerCase() === "all" ? Math.min(user.wallet, bankSpace) : requestedAmount;
 
-        if (!Number.isFinite(amount) || amount <= 0) {
+        if (!Number.isFinite(requestedAmount) || requestedAmount <= 0) {
           return {
             title: "Deposit Failed",
             message: "Enter a positive number or `all`.",
@@ -1484,10 +1691,26 @@ const commands = [
           };
         }
 
-        if (amount > user.wallet) {
+        if (requestedAmount > user.wallet) {
           return {
             title: "Deposit Failed",
             message: `You only have ${formatMoney(interaction, user.wallet)} in your wallet.`,
+            color: 0xed4245
+          };
+        }
+
+        if (bankSpace <= 0) {
+          return {
+            title: "Deposit Failed",
+            message: `Your level ${getBankLevelInfo(user).level} bank is full. Use \`/bank action: Upgrade\` to raise the limit.`,
+            color: 0xed4245
+          };
+        }
+
+        if (requestedAmount > bankSpace) {
+          return {
+            title: "Deposit Failed",
+            message: `Your bank only has room for ${formatBankMoney(interaction, bankSpace)}. Use \`/bank action: Upgrade\` to raise the limit.`,
             color: 0xed4245
           };
         }
@@ -1496,7 +1719,7 @@ const commands = [
         user.bank += amount;
         return {
           title: "Deposited",
-          message: `Moved ${formatMoney(interaction, amount)} into your bank.`,
+          message: `Moved ${formatBankMoney(interaction, amount)} into your bank.`,
           color: 0x5865f2
         };
       });
@@ -1653,8 +1876,10 @@ const commands = [
         }
 
         robber.lastBankrob = Date.now();
+        const successChance = getBankrobSuccessChance(victim);
+        const roll = Math.random();
 
-        if (Math.random() < 0.28) {
+        if (roll < successChance) {
           const stolen = randomInt(150, Math.max(150, Math.floor(victim.bank * 0.35)));
           const xp = addExperience(robber, 18, 35);
           victim.bank -= stolen;
@@ -1662,12 +1887,35 @@ const commands = [
 
           return {
             title: "Bankrob Worked",
-            message: `You cracked the bank vibes and stole ${formatMoney(interaction, stolen)} from ${target.username}.`,
+            message: `You cracked the bank vibes and stole ${formatBankMoney(interaction, stolen)} from ${target.username}.`,
             color: 0x57f287,
             coins: stolen,
+            successChance,
             xp,
             totalExperience: robber.experience
           };
+        }
+
+        if (roll < BANKROB_BASE_SUCCESS_CHANCE) {
+          const defense = consumeTriggeredDefense(victim);
+
+          if (defense) {
+            const fine = payFromWalletThenBank(robber, randomInt(350, 1250));
+            const xp = addExperience(robber, 3, 8);
+            victim.wallet += fine;
+
+            return {
+              title: "Bankrob Blocked",
+              message: `${target.username}'s ${formatItem(interaction, defense.itemId)} stopped the bankrob. You paid ${target.username} ${formatMoney(interaction, fine)}.${defense.consumed ? " The defense was used up." : ""}`,
+              color: 0xed4245,
+              coins: fine,
+              defenseId: defense.itemId,
+              defenseConsumed: defense.consumed,
+              successChance,
+              xp,
+              totalExperience: robber.experience
+            };
+          }
         }
 
         const fine = payFromWalletThenBank(robber, randomInt(250, 900));
@@ -1679,6 +1927,7 @@ const commands = [
           message: `You got caught and paid ${target.username} ${formatMoney(interaction, fine)}.`,
           color: 0xed4245,
           coins: fine,
+          successChance,
           xp,
           totalExperience: robber.experience
         };
@@ -1688,6 +1937,8 @@ const commands = [
         color: outcome.color,
         fields: [
           ...(outcome.coins ? [{ name: "Coins Moved", value: formatMoney(interaction, outcome.coins), inline: true }] : []),
+          ...(typeof outcome.successChance === "number" ? [{ name: "Success Chance", value: `${Math.round(outcome.successChance * 100)}%`, inline: true }] : []),
+          ...(outcome.defenseId ? [{ name: "Defense", value: `${formatItem(interaction, outcome.defenseId)}${outcome.defenseConsumed ? " used up" : " held"}`, inline: true }] : []),
           ...xpFields(interaction, outcome)
         ]
       });
@@ -1782,6 +2033,7 @@ const commands = [
         fields: [
           ...(outcome.coins ? [{ name: outcome.coinsLabel || "Coins", value: formatMoney(interaction, outcome.coins), inline: true }] : []),
           ...(outcome.itemId ? [{ name: "Item Found", value: formatItem(interaction, outcome.itemId), inline: true }] : []),
+          ...(outcome.defenseId ? [{ name: "Defense Installed", value: formatItem(interaction, outcome.defenseId), inline: true }] : []),
           ...xpFields(interaction, outcome)
         ]
       });
@@ -2030,7 +2282,7 @@ const commands = [
           };
         }
 
-        if ((user.inventory?.[itemId] || 0) > 0) {
+        if (!bankDefenseItems[itemId] && (user.inventory?.[itemId] || 0) > 0) {
           return {
             title: "Purchase Failed",
             message: `You already own ${formatItem(interaction, itemId)}.`,

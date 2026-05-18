@@ -58,11 +58,17 @@ npm start
 
 - `/balance` - Check your wallet and bank.
 - `/beg` - Beg for coins with random outcomes.
-- `/work` - Work a goofy job for coins.
-- `/daily` - Claim your daily coins.
+- `/work` - Work a goofy job for money.
+- `/daily` - Claim a daily reward.
+- `/bank` - View bank storage, upgrade costs, and installed defenses.
 - `/deposit amount` - Move coins from wallet to bank.
 - `/withdraw amount` - Move coins from bank to wallet.
 - `/rob user` - Try to rob another user.
+- `/bankrob user` - Try to steal from another user's bank.
+- `/shop` and `/buy` - Buy pickaxes and bank defense items.
+- `/use item` - Use potions, charms, mystery blocks, or install bank defenses.
+- `/hunt` - Hunt for random items.
+- `/mine` - Mine for ores with your best pickaxe.
 - `/gamble amount` - Risk coins for a chance to win more.
 - `/coinflip choice amount` - Bet on heads or tails.
 - `/leaderboard` - Show the richest users by net worth.
