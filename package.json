@@ -1,0 +1,22 @@
+{
+  "name": "discord-economy-bot",
+  "version": "1.0.0",
+  "description": "A basic funny money Discord economy sim bot.",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "deploy": "node src/deploy-commands.js"
+  },
+  "keywords": [
+    "discord",
+    "economy",
+    "bot"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "discord.js": "^14.19.3",
+    "dotenv": "^16.5.0",
+    "mongodb": "^7.2.0"
+  }
+}
