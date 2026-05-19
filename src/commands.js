@@ -1107,6 +1107,74 @@ function shopChoices() {
   });
 }
 
+function getShopItem(itemId) {
+  return shopItems.find((entry) => entry.itemId === itemId) || null;
+}
+
+function isStackableShopItem(itemId) {
+  return Boolean(bankDefenseItems[itemId] || petFoodItems[itemId] || ["hackdevice", "void"].includes(itemId));
+}
+
+function purchaseShopItem(interaction, user, itemId, amount = 1) {
+  const shopItem = getShopItem(itemId);
+  const item = itemById.get(itemId);
+  const quantity = Math.floor(Number(amount) || 0);
+
+  if (!shopItem || !item) {
+    return {
+      title: "Purchase Failed",
+      message: "That item is not in the shop.",
+      color: 0xed4245
+    };
+  }
+
+  if (!Number.isFinite(quantity) || quantity <= 0) {
+    return {
+      title: "Purchase Failed",
+      message: "Enter a positive quantity.",
+      color: 0xed4245
+    };
+  }
+
+  const stackable = isStackableShopItem(itemId);
+  if (!stackable && quantity > 1) {
+    return {
+      title: "Purchase Failed",
+      message: `${formatItem(interaction, itemId)} can only be bought one at a time.`,
+      color: 0xed4245
+    };
+  }
+
+  if (!stackable && ((user.inventory?.[itemId] || 0) > 0 || user.pets?.[itemId])) {
+    return {
+      title: "Purchase Failed",
+      message: `You already own ${formatItem(interaction, itemId)}.`,
+      color: 0xed4245
+    };
+  }
+
+  const totalPrice = shopItem.price * quantity;
+  if (user.wallet < totalPrice) {
+    return {
+      title: "Purchase Failed",
+      message: `You need ${formatMoney(interaction, totalPrice)} in your wallet.`,
+      color: 0xed4245
+    };
+  }
+
+  user.wallet -= totalPrice;
+  addItem(user, itemId, quantity);
+
+  return {
+    title: "Purchase Complete",
+    message: `Bought ${formatItem(interaction, itemId, quantity)} for ${formatMoney(interaction, totalPrice)}.`,
+    color: 0x57f287,
+    itemId,
+    amount: quantity,
+    totalPrice
+  };
+}
+
 function itemChoices(includeAll = true) {
   const source = includeAll ? items : items.filter((item) => item.usable);
   return source.map((item) => ({ name: item.name, value: item.id }));
@@ -1464,6 +1532,149 @@ function getInventoryEntries(inventory) {
 
 function getInventoryPageCount(entries) {
   return Math.max(1, Math.ceil(entries.length / PAGE_SIZE));
+}
+
+function makeShopRows(interaction) {
+  return shopItems.map((shopItem, index) => {
+    const item = itemById.get(shopItem.itemId);
+    return `**#${index + 1} ${formatItem(interaction, shopItem.itemId)}**\n${item?.description || "No description."}\nPrice: ${formatMoney(interaction, shopItem.price)}`;
+  });
+}
+
+function makeShopComponents(interaction, customIdPrefix, page, totalPages) {
+  const components = makePagedRows(customIdPrefix, page, totalPages);
+  const visibleItems = shopItems.slice(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE);
+
+  if (visibleItems.length > 0) {
+    components.unshift(
+      new ActionRowBuilder().addComponents(
+        new StringSelectMenuBuilder()
+          .setCustomId(`${customIdPrefix}_buy`)
+          .setPlaceholder("Buy an item from this page")
+          .addOptions(
+            visibleItems.map((shopItem, index) => {
+              const item = itemById.get(shopItem.itemId);
+              return {
+                label: `#${page * PAGE_SIZE + index + 1} ${item?.name || shopItem.itemId}`,
+                description: `${formatCoins(shopItem.price)} each`,
+                value: shopItem.itemId
+              };
+            })
+          )
+      )
+    );
+  }
+
+  return components;
+}
+
+async function replyShopMenu(interaction) {
+  let page = 0;
+  const totalPages = Math.max(1, Math.ceil(shopItems.length / PAGE_SIZE));
+  const customIdPrefix = `shop_${interaction.id}`;
+
+  async function render(message = null) {
+    const rows = makeShopRows(interaction);
+    const payload = {
+      embeds: [
+        makePagedEmbed(interaction, "Shop", rows, page, {
+          emptyText: "The shop is empty right now. Very exclusive. Suspiciously exclusive.",
+          color: 0xfee75c
+        })
+      ],
+      components: makeShopComponents(interaction, customIdPrefix, page, totalPages)
+    };
+
+    if (message) {
+      await message.edit(payload);
+    } else {
+      await interaction.reply(payload);
+    }
+  }
+
+  await render();
+  const message = await interaction.fetchReply();
+  const collector = message.createMessageComponentCollector({
+    time: 2 * 60 * 1000
+  });
+
+  collector.on("collect", async (componentInteraction) => {
+    if (componentInteraction.user.id !== interaction.user.id) {
+      await componentInteraction.reply({
+        content: "This shop menu is not yours.",
+        ephemeral: true
+      });
+      return;
+    }
+
+    if (componentInteraction.isButton()) {
+      if (componentInteraction.customId.endsWith("_first")) page = 0;
+      if (componentInteraction.customId.endsWith("_prev")) page = Math.max(0, page - 1);
+      if (componentInteraction.customId.endsWith("_next")) page = Math.min(totalPages - 1, page + 1);
+      if (componentInteraction.customId.endsWith("_last")) page = totalPages - 1;
+
+      await componentInteraction.update({
+        embeds: [
+          makePagedEmbed(interaction, "Shop", makeShopRows(interaction), page, {
+            emptyText: "The shop is empty right now. Very exclusive. Suspiciously exclusive.",
+            color: 0xfee75c
+          })
+        ],
+        components: makeShopComponents(interaction, customIdPrefix, page, totalPages)
+      });
+      return;
+    }
+
+    if (!componentInteraction.isStringSelectMenu()) return;
+
+    const itemId = componentInteraction.values[0];
+    const item = itemById.get(itemId);
+    const modal = new ModalBuilder()
+      .setCustomId(`${customIdPrefix}_buy_modal_${itemId}`)
+      .setTitle(`Buy ${item?.name || itemId}`);
+    const amountInput = new TextInputBuilder()
+      .setCustomId("amount")
+      .setLabel("Quantity to buy")
+      .setPlaceholder("Type a number")
+      .setValue("1")
+      .setRequired(true)
+      .setStyle(TextInputStyle.Short);
+
+    modal.addComponents(new ActionRowBuilder().addComponents(amountInput));
+    await componentInteraction.showModal(modal);
+
+    try {
+      const modalInteraction = await componentInteraction.awaitModalSubmit({
+        time: 60 * 1000,
+        filter: (submitInteraction) =>
+          submitInteraction.user.id === interaction.user.id &&
+          submitInteraction.customId === `${customIdPrefix}_buy_modal_${itemId}`
+      });
+      const amount = Number.parseInt(modalInteraction.fields.getTextInputValue("amount").trim(), 10);
+      const outcome = await withStore((store) => {
+        const user = getUser(store, interaction.user.id);
+        return purchaseShopItem(interaction, user, itemId, amount);
+      });
+
+      await modalInteraction.reply({
+        embeds: [makeEmbed(interaction, outcome.title, outcome.message, { color: outcome.color })],
+        ephemeral: true
+      });
+      await render(message);
+    } catch {
+      await render(message);
+    }
+  });
+
+  collector.on("end", async () => {
+    const disabledComponents = makeShopComponents(interaction, customIdPrefix, page, totalPages);
+
+    for (const row of disabledComponents) {
+      row.components.forEach((component) => component.setDisabled(true));
+    }
+
+    await message.edit({ components: disabledComponents }).catch(() => {});
+  });
 }
 
 async function replyInventoryMenu(interaction, target) {
@@ -2865,18 +3076,7 @@ const commands = [
   {
     data: new SlashCommandBuilder().setName("shop").setDescription("View the shop."),
     async execute(interaction) {
-      const rows = shopItems.map((shopItem) => {
-        const item = itemById.get(shopItem.itemId);
-        return `**${formatItem(interaction, shopItem.itemId)}**\n${item?.description || "No description."}\nPrice: ${formatMoney(interaction, shopItem.price)}`;
-      });
-
-      await replyPagedMenu(interaction, {
-        id: "shop",
-        title: "Shop",
-        rows,
-        emptyText: "The shop is empty right now. Very exclusive. Suspiciously exclusive.",
-        color: 0xfee75c
-      });
+      await replyShopMenu(interaction);
     }
   },
   {
@@ -2889,52 +3089,25 @@ const commands = [
           .setDescription("Shop item to buy.")
           .setRequired(true)
           .addChoices(...shopChoices())
+      )
+      .addIntegerOption((option) =>
+        option.setName("quantity").setDescription("Quantity to buy.").setRequired(false).setMinValue(1)
       ),
     async execute(interaction) {
       const itemId = interaction.options.getString("item");
-      const shopItem = shopItems.find((entry) => entry.itemId === itemId);
+      const quantity = interaction.options.getInteger("quantity") || 1;
 
       const outcome = await withStore((store) => {
         const user = getUser(store, interaction.user.id);
-
-        if (!shopItem) {
-          return {
-            title: "Purchase Failed",
-            message: "That item is not in the shop.",
-            color: 0xed4245
-          };
-        }
-
-        if (!bankDefenseItems[itemId] && !petFoodItems[itemId] && !["hackdevice", "void"].includes(itemId) && ((user.inventory?.[itemId] || 0) > 0 || user.pets?.[itemId])) {
-          return {
-            title: "Purchase Failed",
-            message: `You already own ${formatItem(interaction, itemId)}.`,
-            color: 0xed4245
-          };
-        }
-
-        if (user.wallet < shopItem.price) {
-          return {
-            title: "Purchase Failed",
-            message: `You need ${formatMoney(interaction, shopItem.price)} in your wallet.`,
-            color: 0xed4245
-          };
-        }
-
-        user.wallet -= shopItem.price;
-        addItem(user, itemId);
-
-        return {
-          title: "Purchase Complete",
-          message: `Bought ${formatItem(interaction, itemId)} for ${formatMoney(interaction, shopItem.price)}.`,
-          color: 0x57f287,
-          itemId
-        };
+        return purchaseShopItem(interaction, user, itemId, quantity);
       });
 
       await replyEmbed(interaction, outcome.title, outcome.message, {
         color: outcome.color,
-        fields: outcome.itemId ? [{ name: "Item", value: formatItem(interaction, outcome.itemId), inline: true }] : []
+        fields: outcome.itemId ? [
+          { name: "Item", value: formatItem(interaction, outcome.itemId, outcome.amount), inline: true },
+          { name: "Total", value: formatMoney(interaction, outcome.totalPrice), inline: true }
+        ] : []
       });
     }
   },
