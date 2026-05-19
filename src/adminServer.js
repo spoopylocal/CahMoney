@@ -10,6 +10,8 @@ const DEFAULT_USER = {
   bankDefenses: {},
   experience: 0,
   inventory: {},
+  pets: {},
+  equippedPet: null,
   boosts: {},
   rig: null,
   lastBeg: 0,
@@ -55,6 +57,20 @@ const itemCatalog = [
   ["cd", "CD"],
   ["burger", "Burger"],
   ["boots", "Boots"],
+  ["watermelon", "Watermelon"],
+  ["toco", "Toco"],
+  ["orange", "Orange"],
+  ["meat", "Meat"],
+  ["beans", "Beans"],
+  ["croissant", "Croissant"],
+  ["crunch", "Crunch"],
+  ["basicdog", "Basic Dog"],
+  ["cat", "Cat"],
+  ["funnydog", "Funny Dog"],
+  ["geckodragon", "Gecko Dragon"],
+  ["lizard", "Lizard"],
+  ["rufus", "Rufus"],
+  ["smirkcat", "Smirk Cat"],
   ["alarm", "Alarm"],
   ["laser_grid", "Laser Grid"],
   ["land_mine", "Land Mine"],
@@ -116,6 +132,8 @@ function cleanUser(input) {
 
   user.bankDefenses = source.bankDefenses && typeof source.bankDefenses === "object" && !Array.isArray(source.bankDefenses) ? source.bankDefenses : {};
   user.inventory = source.inventory && typeof source.inventory === "object" && !Array.isArray(source.inventory) ? source.inventory : {};
+  user.pets = source.pets && typeof source.pets === "object" && !Array.isArray(source.pets) ? source.pets : {};
+  user.equippedPet = source.equippedPet || null;
   user.boosts = source.boosts && typeof source.boosts === "object" && !Array.isArray(source.boosts) ? source.boosts : {};
   user.rig = source.rig || null;
 
@@ -136,6 +154,8 @@ function cleanUser(input) {
     if (time > 0) user.boosts[boostId] = time;
     else delete user.boosts[boostId];
   }
+
+  if (user.equippedPet && !user.pets[user.equippedPet]) user.equippedPet = null;
 
   return user;
 }
@@ -194,10 +214,11 @@ async function handleApi(req, res, pathname) {
   if (userMatch && req.method === "PUT") {
     const userId = userMatch[1];
     const body = await readBody(req);
-    const user = cleanUser(body.user);
     await withStore((store) => {
+      const user = cleanUser({ ...getUser(store, userId), ...body.user });
       store.users[userId] = user;
     });
+    const user = await withStore((store) => getUser(store, userId));
     send(res, 200, { ok: true, userId, user });
     return;
   }
@@ -478,7 +499,15 @@ function authHeaders() {
 }
 
 async function api(path, options = {}) {
-  const res = await fetch(path, { ...options, headers: { ...authHeaders(), ...(options.headers || {}) } });
+  const method = (options.method || "GET").toUpperCase();
+  const requestPath = method === "GET"
+    ? path + (path.includes("?") ? "&" : "?") + "_=" + Date.now()
+    : path;
+  const res = await fetch(requestPath, {
+    cache: "no-store",
+    ...options,
+    headers: { ...authHeaders(), ...(options.headers || {}) }
+  });
   const body = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(body.error || "Request failed");
   return body;
@@ -520,6 +549,17 @@ function fillSelect(id, rows) {
 async function loadUsers() {
   users = (await api("/api/users")).users;
   renderUsers();
+  if (!selected) return;
+
+  if (!users.some((user) => user.userId === selected)) {
+    selected = null;
+    document.getElementById("editor").classList.add("hidden");
+    document.getElementById("empty").classList.remove("hidden");
+    return;
+  }
+
+  const data = await api("/api/users/" + selected);
+  showEditor(data.userId, data.user);
 }
 
 function renderUsers() {
