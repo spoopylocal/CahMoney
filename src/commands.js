@@ -23,6 +23,8 @@ const HUNT_COOLDOWN = 90 * 1000;
 const GIVE_COOLDOWN = 20 * 1000;
 const MINE_COOLDOWN = 45 * 1000;
 const LUCKY_CHARM_DURATION = 5 * 60 * 1000;
+const PET_IDLE_INTERVAL = 30 * 60 * 1000;
+const PET_MAX_IDLE_HUNTS = 48;
 const PAGE_SIZE = 5;
 const DEV_USER_ID = "749345623785996489";
 const BANKROB_BASE_SUCCESS_CHANCE = 0.28;
@@ -55,8 +57,35 @@ const shopItems = [
   { itemId: "land_mine", price: 70000 },
   { itemId: "guard", price: 100000 },
   { itemId: "hackdevice", price: 100000 },
-  { itemId: "void", price: 150000 }
+  { itemId: "void", price: 150000 },
+  { itemId: "watermelon", price: 650 },
+  { itemId: "toco", price: 900 },
+  { itemId: "orange", price: 350 },
+  { itemId: "meat", price: 1400 },
+  { itemId: "beans", price: 750 },
+  { itemId: "croissant", price: 800 },
+  { itemId: "crunch", price: 450 }
 ];
+
+const petItems = {
+  basicdog: { name: "Basic Dog", baseLuck: 1, baseSpeed: 1 },
+  cat: { name: "Cat", baseLuck: 1.04, baseSpeed: 1 },
+  funnydog: { name: "Funny Dog", baseLuck: 1.02, baseSpeed: 1.08 },
+  geckodragon: { name: "Gecko Dragon", baseLuck: 1.08, baseSpeed: 1.04 },
+  lizard: { name: "Lizard", baseLuck: 1.05, baseSpeed: 1.05 },
+  rufus: { name: "Rufus", baseLuck: 1.12, baseSpeed: 1.02 },
+  smirkcat: { name: "Smirk Cat", baseLuck: 1.1, baseSpeed: 1.06 }
+};
+
+const petFoodItems = {
+  watermelon: { foodMs: 6 * 60 * 60 * 1000, luckBoost: 1, speedBoost: 1, boostMs: 0 },
+  toco: { foodMs: 4 * 60 * 60 * 1000, luckBoost: 1.2, speedBoost: 1.15, boostMs: 2 * 60 * 60 * 1000 },
+  orange: { foodMs: 3 * 60 * 60 * 1000, luckBoost: 1.05, speedBoost: 1, boostMs: 60 * 60 * 1000 },
+  meat: { foodMs: 8 * 60 * 60 * 1000, luckBoost: 1.1, speedBoost: 1.3, boostMs: 3 * 60 * 60 * 1000 },
+  beans: { foodMs: 5 * 60 * 60 * 1000, luckBoost: 1, speedBoost: 1.08, boostMs: 90 * 60 * 1000 },
+  croissant: { foodMs: 4 * 60 * 60 * 1000, luckBoost: 1.08, speedBoost: 1, boostMs: 90 * 60 * 1000 },
+  crunch: { foodMs: 2 * 60 * 60 * 1000, luckBoost: 1, speedBoost: 1.2, boostMs: 45 * 60 * 1000 }
+};
 
 const jobs = [
   "tested suspicious vending machines",
@@ -99,6 +128,20 @@ const items = [
   { id: "burger", name: "Burger", description: "Found food. Economically brave.", weight: 24, sellValue: 55 },
   { id: "boots", name: "Boots", description: "Only lightly cursed by the trail.", weight: 18, sellValue: 90 },
   { id: "crown", name: "Crown", description: "Royal-looking enough to cause problems.", weight: 3, sellValue: 1750 },
+  { id: "watermelon", name: "Watermelon", description: "Pet food. Adds 6 hours of food time.", weight: 28, sellValue: 90 },
+  { id: "toco", name: "Toco", description: "Pet food. Adds 4 hours and boosts luck and speed.", weight: 22, sellValue: 140 },
+  { id: "orange", name: "Orange", description: "Pet food. Adds 3 hours and a small luck boost.", weight: 30, sellValue: 60 },
+  { id: "meat", name: "Meat", description: "Pet food. Adds 8 hours and a strong speed boost.", weight: 16, sellValue: 220 },
+  { id: "beans", name: "Beans", description: "Pet food. Adds 5 hours and a small speed boost.", weight: 25, sellValue: 100 },
+  { id: "croissant", name: "Croissant", description: "Pet food. Adds 4 hours and a small luck boost.", weight: 24, sellValue: 110 },
+  { id: "crunch", name: "Crunch", description: "Pet food. Adds 2 hours and a quick speed boost.", weight: 30, sellValue: 75 },
+  { id: "basicdog", name: "Basic Dog", description: "A pet you can equip with /pet.", weight: 6, sellValue: 2500 },
+  { id: "cat", name: "Cat", description: "A pet you can equip with /pet.", weight: 5, sellValue: 3000 },
+  { id: "funnydog", name: "Funny Dog", description: "A pet you can equip with /pet.", weight: 4, sellValue: 4500 },
+  { id: "geckodragon", name: "Gecko Dragon", description: "A pet you can equip with /pet.", weight: 3, sellValue: 6000 },
+  { id: "lizard", name: "Lizard", description: "A pet you can equip with /pet.", weight: 4, sellValue: 4200 },
+  { id: "rufus", name: "Rufus", description: "A pet you can equip with /pet.", weight: 2, sellValue: 8000 },
+  { id: "smirkcat", name: "Smirk Cat", description: "A pet you can equip with /pet.", weight: 2, sellValue: 8500 },
   { id: "alarm", name: "Alarm", description: "Use it to install a bank defense.", weight: 0, sellValue: 4000, usable: true },
   { id: "laser_grid", name: "Laser Grid", description: "Use it to install a bank defense.", weight: 0, sellValue: 12000, usable: true },
   { id: "land_mine", name: "Land Mine", description: "Use it to install a bank defense.", weight: 0, sellValue: 18000, usable: true },
@@ -511,6 +554,131 @@ function removeItem(user, itemId, quantity = 1) {
   return true;
 }
 
+function petChoices() {
+  return Object.entries(petItems).map(([id, pet]) => ({ name: pet.name, value: id }));
+}
+
+function petFoodChoices() {
+  return Object.entries(petFoodItems).map(([id]) => {
+    const item = itemById.get(id);
+    return { name: item?.name || id, value: id };
+  });
+}
+
+function normalizePet(user, petId) {
+  user.pets ||= {};
+  if (!user.pets[petId]) return null;
+
+  const pet = user.pets[petId];
+  pet.id = petId;
+  pet.xp = Math.max(0, Math.floor(Number(pet.xp) || 0));
+  pet.level = getLevel(pet.xp);
+  pet.fedUntil = Math.max(0, Math.floor(Number(pet.fedUntil) || 0));
+  pet.lastIdleAt = Math.max(0, Math.floor(Number(pet.lastIdleAt) || Date.now()));
+  pet.stash ||= {};
+  pet.boosts ||= {};
+  return pet;
+}
+
+function getEquippedPet(user) {
+  if (!user.equippedPet || !petItems[user.equippedPet]) return null;
+  return normalizePet(user, user.equippedPet);
+}
+
+function getPetBoost(pet, boostId) {
+  const boost = pet.boosts?.[boostId];
+  if (!boost || boost.expiresAt <= Date.now()) {
+    if (pet.boosts) delete pet.boosts[boostId];
+    return null;
+  }
+  return boost;
+}
+
+function getPetStats(pet) {
+  const definition = petItems[pet.id];
+  const levelBonus = Math.max(0, getLevel(pet.xp) - 1);
+  const luckBoost = getPetBoost(pet, "luck");
+  const speedBoost = getPetBoost(pet, "speed");
+  return {
+    luck: (definition.baseLuck + levelBonus * 0.015) * (luckBoost?.multiplier || 1),
+    speed: (definition.baseSpeed + levelBonus * 0.01) * (speedBoost?.multiplier || 1)
+  };
+}
+
+function addPetExperience(pet, amount) {
+  pet.xp = (pet.xp || 0) + amount;
+  pet.level = getLevel(pet.xp);
+  return pet.level;
+}
+
+function pickPetHuntItem(luckMultiplier = 1) {
+  const dropItems = items.filter((item) => item.weight > 0 && !petItems[item.id]);
+  const weightedItems = dropItems.map((item, index) => {
+    const bonus = 1 + (luckMultiplier - 1) * (index / Math.max(1, dropItems.length - 1));
+    return { ...item, adjustedWeight: item.weight * bonus };
+  });
+  const totalWeight = weightedItems.reduce((sum, item) => sum + item.adjustedWeight, 0);
+  let roll = randomInt(1, totalWeight);
+
+  for (const item of weightedItems) {
+    roll -= item.adjustedWeight;
+    if (roll <= 0) return item;
+  }
+
+  return weightedItems[weightedItems.length - 1];
+}
+
+function processPetIdleHunts(user) {
+  const pet = getEquippedPet(user);
+  if (!pet) return { pet: null, hunts: 0, drops: {}, xp: 0 };
+
+  const now = Date.now();
+  const fedUntil = Math.min(pet.fedUntil, now);
+  if (fedUntil <= pet.lastIdleAt) {
+    pet.lastIdleAt = Math.max(pet.lastIdleAt, now);
+    return { pet, hunts: 0, drops: {}, xp: 0 };
+  }
+
+  const stats = getPetStats(pet);
+  const interval = Math.max(5 * 60 * 1000, Math.floor(PET_IDLE_INTERVAL / stats.speed));
+  const hunts = Math.min(PET_MAX_IDLE_HUNTS, Math.floor((fedUntil - pet.lastIdleAt) / interval));
+  const drops = {};
+  let xp = 0;
+
+  for (let index = 0; index < hunts; index += 1) {
+    const item = pickPetHuntItem(stats.luck);
+    drops[item.id] = (drops[item.id] || 0) + 1;
+    xp += randomInt(6, 12);
+  }
+
+  if (hunts > 0) {
+    pet.lastIdleAt += hunts * interval;
+    addPetExperience(pet, xp);
+    for (const [itemId, quantity] of Object.entries(drops)) {
+      pet.stash[itemId] = (pet.stash[itemId] || 0) + quantity;
+    }
+  }
+
+  return { pet, hunts, drops, xp };
+}
+
+function claimPetStash(user) {
+  const pet = getEquippedPet(user);
+  if (!pet) return { pet: null, claimed: {} };
+
+  processPetIdleHunts(user);
+  const claimed = { ...pet.stash };
+  for (const [itemId, quantity] of Object.entries(claimed)) addItem(user, itemId, quantity);
+  pet.stash = {};
+  return { pet, claimed };
+}
+
+function formatPetStash(interaction, stash) {
+  const entries = Object.entries(stash || {}).filter(([, quantity]) => quantity > 0);
+  if (entries.length === 0) return "Nothing to claim yet.";
+  return entries.map(([itemId, quantity]) => formatItem(interaction, itemId, quantity)).join("\n");
+}
+
 function normalizeBankLevel(user) {
   const level = Math.floor(Number(user.bankLevel) || 1);
   user.bankLevel = Math.min(bankLevels.length, Math.max(1, level));
@@ -916,6 +1084,98 @@ async function replyEmbed(interaction, title, description, options = {}) {
   await interaction.reply({
     embeds: [makeEmbed(interaction, title, description, options)],
     ephemeral: options.ephemeral || false
+  });
+}
+
+function makePetEmbed(interaction, outcome) {
+  const pet = outcome.pet;
+  if (!pet) {
+    return makeEmbed(interaction, "Pet", "Equip a pet with `/pet action: Equip` to start idle hunting.", {
+      color: 0xfee75c
+    });
+  }
+
+  const stats = getPetStats(pet);
+  const fedText = pet.fedUntil > Date.now() ? formatDuration(pet.fedUntil - Date.now()) : "Hungry";
+  const luckBoost = getPetBoost(pet, "luck");
+  const speedBoost = getPetBoost(pet, "speed");
+  const boosts = [
+    luckBoost ? `Luck x${luckBoost.multiplier.toFixed(2)} (${formatDuration(luckBoost.expiresAt - Date.now())})` : null,
+    speedBoost ? `Speed x${speedBoost.multiplier.toFixed(2)} (${formatDuration(speedBoost.expiresAt - Date.now())})` : null
+  ].filter(Boolean).join("\n") || "None";
+
+  return makeEmbed(interaction, "Pet", `${formatItem(interaction, pet.id)} is equipped.`, {
+    color: 0x57f287,
+    fields: [
+      { name: "Level", value: `${getLevel(pet.xp)}\n${formatExperience(interaction, getExperienceUntilNextLevel(pet.xp))} to next level`, inline: true },
+      { name: "Food", value: fedText, inline: true },
+      { name: "Stats", value: `Luck x${stats.luck.toFixed(2)}\nSpeed x${stats.speed.toFixed(2)}`, inline: true },
+      { name: "Boosts", value: boosts, inline: true },
+      { name: "Idle Hunts", value: `${outcome.hunts || 0} new hunt(s) processed`, inline: true },
+      { name: "Stash", value: formatPetStash(interaction, pet.stash), inline: false }
+    ]
+  });
+}
+
+function makePetComponents(customIdPrefix, disabled = false) {
+  return [
+    new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId(`${customIdPrefix}_claim`)
+        .setLabel("Claim")
+        .setStyle(ButtonStyle.Success)
+        .setDisabled(disabled),
+      new ButtonBuilder()
+        .setCustomId(`${customIdPrefix}_refresh`)
+        .setLabel("Refresh")
+        .setStyle(ButtonStyle.Secondary)
+        .setDisabled(disabled)
+    )
+  ];
+}
+
+async function replyPetMenu(interaction) {
+  const customIdPrefix = `pet_${interaction.id}`;
+  const outcome = await withStore((store) => {
+    const user = getUser(store, interaction.user.id);
+    return processPetIdleHunts(user);
+  });
+
+  await interaction.reply({
+    embeds: [makePetEmbed(interaction, outcome)],
+    components: makePetComponents(customIdPrefix, !outcome.pet),
+    ephemeral: true
+  });
+
+  const message = await interaction.fetchReply();
+  const collector = message.createMessageComponentCollector({
+    componentType: ComponentType.Button,
+    time: 90 * 1000
+  });
+
+  collector.on("collect", async (buttonInteraction) => {
+    if (buttonInteraction.user.id !== interaction.user.id) {
+      await buttonInteraction.reply({ content: "This pet menu is not yours.", ephemeral: true });
+      return;
+    }
+
+    const result = await withStore((store) => {
+      const user = getUser(store, interaction.user.id);
+      if (buttonInteraction.customId === `${customIdPrefix}_claim`) {
+        const claimed = claimPetStash(user);
+        return { ...claimed, claimedNow: true };
+      }
+      return processPetIdleHunts(user);
+    });
+
+    await buttonInteraction.update({
+      embeds: [makePetEmbed(interaction, result)],
+      components: makePetComponents(customIdPrefix, !result.pet)
+    });
+  });
+
+  collector.on("end", async () => {
+    await message.edit({ components: makePetComponents(customIdPrefix, true) }).catch(() => {});
   });
 }
 
@@ -2137,6 +2397,10 @@ const commands = [
 
         user.lastHunt = Date.now();
         const xp = addExperience(user, 4, 10);
+        const petIdle = processPetIdleHunts(user);
+        const pet = petIdle.pet;
+        const petXp = pet && pet.fedUntil > Date.now() ? randomInt(5, 10) : 0;
+        if (petXp > 0) addPetExperience(pet, petXp);
         const luckMultiplier = getLuckMultiplier(user);
         const failChance = luckMultiplier > 1 ? 0.12 : 0.2;
 
@@ -2146,7 +2410,9 @@ const commands = [
             message: "You found nothing except character development.",
             color: 0xed4245,
             xp,
-            totalExperience: user.experience
+            totalExperience: user.experience,
+            petId: petXp > 0 ? pet.id : null,
+            petXp
           };
         }
 
@@ -2160,7 +2426,9 @@ const commands = [
           itemId: item.id,
           luckMultiplier,
           xp,
-          totalExperience: user.experience
+          totalExperience: user.experience,
+          petId: petXp > 0 ? pet.id : null,
+          petXp
         };
       });
 
@@ -2169,9 +2437,185 @@ const commands = [
         fields: [
           ...(outcome.itemId ? [{ name: "Item Found", value: formatItem(interaction, outcome.itemId), inline: true }] : []),
           ...(outcome.luckMultiplier > 1 ? [{ name: "Boost", value: "+20% luck", inline: true }] : []),
+          ...(outcome.petXp ? [{ name: "Pet XP", value: `${formatItem(interaction, outcome.petId)} gained ${formatExperience(interaction, outcome.petXp)}`, inline: false }] : []),
           ...xpFields(interaction, outcome)
         ]
       });
+    }
+  },
+  {
+    data: new SlashCommandBuilder()
+      .setName("pet")
+      .setDescription("Manage your equipped pet.")
+      .addStringOption((option) =>
+        option
+          .setName("action")
+          .setDescription("What to do.")
+          .setRequired(false)
+          .addChoices(
+            { name: "Menu", value: "menu" },
+            { name: "Equip", value: "equip" },
+            { name: "Feed", value: "feed" },
+            { name: "Claim", value: "claim" }
+          )
+      )
+      .addStringOption((option) =>
+        option
+          .setName("pet")
+          .setDescription("Pet to equip.")
+          .setRequired(false)
+          .addChoices(...petChoices())
+      )
+      .addStringOption((option) =>
+        option
+          .setName("food")
+          .setDescription("Food to feed your equipped pet.")
+          .setRequired(false)
+          .addChoices(...petFoodChoices())
+      )
+      .addIntegerOption((option) =>
+        option.setName("amount").setDescription("Food amount.").setRequired(false).setMinValue(1).setMaxValue(1000)
+      ),
+    async execute(interaction) {
+      const action = interaction.options.getString("action") || "menu";
+      const petId = interaction.options.getString("pet");
+      const foodId = interaction.options.getString("food");
+      const amount = interaction.options.getInteger("amount") || 1;
+
+      if (action === "menu") {
+        await replyPetMenu(interaction);
+        return;
+      }
+
+      if (action === "equip") {
+        const outcome = await withStore((store) => {
+          const user = getUser(store, interaction.user.id);
+
+          if (!petId || !petItems[petId]) {
+            return { title: "Equip Failed", message: "Pick a pet to equip.", color: 0xed4245 };
+          }
+
+          user.pets ||= {};
+          if (!user.pets[petId]) {
+            if (!removeItem(user, petId)) {
+              return {
+                title: "Equip Failed",
+                message: `You need ${formatItem(interaction, petId)} in your inventory first.`,
+                color: 0xed4245
+              };
+            }
+
+            user.pets[petId] = {
+              id: petId,
+              xp: 0,
+              level: 1,
+              fedUntil: 0,
+              lastIdleAt: Date.now(),
+              stash: {},
+              boosts: {}
+            };
+          }
+
+          user.equippedPet = petId;
+          const pet = normalizePet(user, petId);
+          return {
+            title: "Pet Equipped",
+            message: `${formatItem(interaction, petId)} is now your equipped pet.`,
+            color: 0x57f287,
+            pet
+          };
+        });
+
+        await replyEmbed(interaction, outcome.title, outcome.message, {
+          color: outcome.color,
+          ephemeral: true,
+          fields: outcome.pet ? [
+            { name: "Food", value: outcome.pet.fedUntil > Date.now() ? formatDuration(outcome.pet.fedUntil - Date.now()) : "Hungry", inline: true },
+            { name: "Level", value: `${getLevel(outcome.pet.xp)}`, inline: true }
+          ] : []
+        });
+        return;
+      }
+
+      if (action === "feed") {
+        const outcome = await withStore((store) => {
+          const user = getUser(store, interaction.user.id);
+          const pet = getEquippedPet(user);
+          if (!pet) return { title: "Feed Failed", message: "Equip a pet first.", color: 0xed4245 };
+          if (!foodId || !petFoodItems[foodId]) return { title: "Feed Failed", message: "Pick a pet food.", color: 0xed4245 };
+          if (!removeItem(user, foodId, amount)) {
+            return {
+              title: "Feed Failed",
+              message: `You do not have ${formatItem(interaction, foodId, amount)}.`,
+              color: 0xed4245
+            };
+          }
+
+          processPetIdleHunts(user);
+          const food = petFoodItems[foodId];
+          const now = Date.now();
+          pet.fedUntil = Math.max(now, pet.fedUntil) + food.foodMs * amount;
+          if (food.boostMs > 0 && food.luckBoost > 1) {
+            const current = getPetBoost(pet, "luck");
+            pet.boosts.luck = {
+              multiplier: Math.max(food.luckBoost, current?.multiplier || 1),
+              expiresAt: Math.max(now, current?.expiresAt || 0) + food.boostMs * amount
+            };
+          }
+          if (food.boostMs > 0 && food.speedBoost > 1) {
+            const current = getPetBoost(pet, "speed");
+            pet.boosts.speed = {
+              multiplier: Math.max(food.speedBoost, current?.multiplier || 1),
+              expiresAt: Math.max(now, current?.expiresAt || 0) + food.boostMs * amount
+            };
+          }
+
+          return {
+            title: "Pet Fed",
+            message: `${formatItem(interaction, pet.id)} ate ${formatItem(interaction, foodId, amount)}.`,
+            color: 0x57f287,
+            pet,
+            foodId,
+            amount
+          };
+        });
+
+        await replyEmbed(interaction, outcome.title, outcome.message, {
+          color: outcome.color,
+          ephemeral: true,
+          fields: outcome.pet ? [
+            { name: "Food Time", value: formatDuration(outcome.pet.fedUntil - Date.now()), inline: true },
+            { name: "Stash", value: formatPetStash(interaction, outcome.pet.stash), inline: false }
+          ] : []
+        });
+        return;
+      }
+
+      if (action === "claim") {
+        const outcome = await withStore((store) => {
+          const user = getUser(store, interaction.user.id);
+          const result = claimPetStash(user);
+          if (!result.pet) return { title: "Claim Failed", message: "Equip a pet first.", color: 0xed4245 };
+          return {
+            title: "Pet Stash Claimed",
+            message: Object.keys(result.claimed).length > 0
+              ? `${formatItem(interaction, result.pet.id)} brought everything back.`
+              : `${formatItem(interaction, result.pet.id)} has not found anything yet.`,
+            color: Object.keys(result.claimed).length > 0 ? 0x57f287 : 0xfee75c,
+            pet: result.pet,
+            claimed: result.claimed
+          };
+        });
+
+        await replyEmbed(interaction, outcome.title, outcome.message, {
+          color: outcome.color,
+          ephemeral: true,
+          fields: outcome.claimed ? [
+            { name: "Claimed", value: formatPetStash(interaction, outcome.claimed), inline: false },
+            ...(outcome.pet ? [{ name: "Pet Level", value: `${getLevel(outcome.pet.xp)}`, inline: true }] : [])
+          ] : []
+        });
+      }
     }
   },
   {
@@ -2459,7 +2903,7 @@ const commands = [
           };
         }
 
-        if (!bankDefenseItems[itemId] && !["hackdevice", "void"].includes(itemId) && (user.inventory?.[itemId] || 0) > 0) {
+        if (!bankDefenseItems[itemId] && !petFoodItems[itemId] && !["hackdevice", "void"].includes(itemId) && (user.inventory?.[itemId] || 0) > 0) {
           return {
             title: "Purchase Failed",
             message: `You already own ${formatItem(interaction, itemId)}.`,

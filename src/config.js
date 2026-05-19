@@ -49,7 +49,21 @@ const config = {
     guard: process.env.ITEM_GUARD_EMOJI || null,
     alarm: process.env.ITEM_ALARM_EMOJI || null,
     hackdevice: process.env.ITEM_HACKDEVICE_EMOJI || null,
-    void: process.env.ITEM_VOID_EMOJI || null
+    void: process.env.ITEM_VOID_EMOJI || null,
+    watermelon: process.env.ITEM_WATERMELON_EMOJI || null,
+    toco: process.env.ITEM_TOCO_EMOJI || null,
+    smirkcat: process.env.ITEM_SMIRKCAT_EMOJI || null,
+    rufus: process.env.ITEM_RUFUS_EMOJI || null,
+    orange: process.env.ITEM_ORANGE_EMOJI || null,
+    meat: process.env.ITEM_MEAT_EMOJI || null,
+    lizard: process.env.ITEM_LIZARD_EMOJI || null,
+    geckodragon: process.env.ITEM_GECKODRAGON_EMOJI || null,
+    funnydog: process.env.ITEM_FUNNYDOG_EMOJI || null,
+    crunch: process.env.ITEM_CRUNCH_EMOJI || null,
+    croissant: process.env.ITEM_CROISSANT_EMOJI || null,
+    cat: process.env.ITEM_CAT_EMOJI || null,
+    beans: process.env.ITEM_BEANS_EMOJI || null,
+    basicdog: process.env.ITEM_BASICDOG_EMOJI || null
   },
   cardEmojis: {
     1: process.env.CARD_1_EMOJI || null,

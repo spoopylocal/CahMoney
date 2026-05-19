@@ -67,9 +67,10 @@ npm start
 - `/bankrob user` - Try to steal from another user's bank.
 - `/scanbank user` - Spend a Hack Device to scan a user's bank defenses.
 - `/voiddefense user` - Spend a Void to remove one random bank defense.
-- `/shop` and `/buy` - Buy pickaxes and bank defense items.
+- `/shop` and `/buy` - Buy pickaxes, bank defense items, tools, and pet food.
 - `/use item` - Use potions, charms, mystery blocks, or install bank defenses.
 - `/hunt` - Hunt for random items.
+- `/pet` - Equip one pet, feed it, claim idle hunt drops, and view pet level/food time.
 - `/mine` - Mine for ores with your best pickaxe.
 - `/gamble amount` - Risk coins for a chance to win more.
 - `/coinflip choice amount` - Bet on heads or tails.

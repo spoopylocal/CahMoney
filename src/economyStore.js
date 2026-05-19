@@ -9,6 +9,8 @@ const DEFAULT_USER = {
   bankDefenses: {},
   experience: 0,
   inventory: {},
+  pets: {},
+  equippedPet: null,
   boosts: {},
   rig: null,
   lastBeg: 0,
