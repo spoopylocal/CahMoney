@@ -612,6 +612,20 @@ function getPetStats(pet) {
   };
 }
 
+function getPetHuntInterval(pet) {
+  return Math.max(5 * 60 * 1000, Math.floor(PET_IDLE_INTERVAL / getPetStats(pet).speed));
+}
+
+function formatPetNextHunt(pet) {
+  if (pet.fedUntil <= Date.now()) return "Feed pet to start idle hunting.";
+
+  const interval = getPetHuntInterval(pet);
+  const nextHuntAt = pet.lastIdleAt + interval;
+  if (nextHuntAt <= Date.now()) return "Ready on refresh.";
+  if (nextHuntAt > pet.fedUntil) return `Feed runs out before next hunt (${formatDuration(pet.fedUntil - Date.now())} left).`;
+  return formatDuration(nextHuntAt - Date.now());
+}
+
 function addPetExperience(pet, amount) {
   pet.xp = (pet.xp || 0) + amount;
   pet.level = getLevel(pet.xp);
@@ -647,7 +661,7 @@ function processPetIdleHunts(user) {
   }
 
   const stats = getPetStats(pet);
-  const interval = Math.max(5 * 60 * 1000, Math.floor(PET_IDLE_INTERVAL / stats.speed));
+  const interval = getPetHuntInterval(pet);
   const hunts = Math.min(PET_MAX_IDLE_HUNTS, Math.floor((fedUntil - pet.lastIdleAt) / interval));
   const drops = {};
   let xp = 0;
@@ -1268,6 +1282,7 @@ function makePetEmbed(interaction, outcome) {
     fields: [
       { name: "Level", value: `${getLevel(pet.xp)}\n${formatExperience(interaction, getExperienceUntilNextLevel(pet.xp))} to next level`, inline: true },
       { name: "Food", value: fedText, inline: true },
+      { name: "Next Hunt", value: formatPetNextHunt(pet), inline: true },
       { name: "Stats", value: `Luck x${stats.luck.toFixed(2)}\nSpeed x${stats.speed.toFixed(2)}`, inline: true },
       { name: "Boosts", value: boosts, inline: true },
       { name: "Idle Hunts", value: `${outcome.hunts || 0} new hunt(s) processed`, inline: true },
