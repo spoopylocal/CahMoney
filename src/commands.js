@@ -64,7 +64,14 @@ const shopItems = [
   { itemId: "meat", price: 1400 },
   { itemId: "beans", price: 750 },
   { itemId: "croissant", price: 800 },
-  { itemId: "crunch", price: 450 }
+  { itemId: "crunch", price: 450 },
+  { itemId: "basicdog", price: 25000 },
+  { itemId: "cat", price: 30000 },
+  { itemId: "funnydog", price: 45000 },
+  { itemId: "geckodragon", price: 60000 },
+  { itemId: "lizard", price: 42000 },
+  { itemId: "rufus", price: 80000 },
+  { itemId: "smirkcat", price: 85000 }
 ];
 
 const petItems = {
@@ -679,6 +686,90 @@ function formatPetStash(interaction, stash) {
   return entries.map(([itemId, quantity]) => formatItem(interaction, itemId, quantity)).join("\n");
 }
 
+function ownedPetSelectOptions(user) {
+  user.inventory ||= {};
+  user.pets ||= {};
+  const ownedIds = Object.keys(petItems).filter((petId) => user.pets[petId] || (user.inventory[petId] || 0) > 0);
+
+  return ownedIds.slice(0, 25).map((petId) => ({
+    label: petItems[petId].name,
+    value: petId,
+    description: user.pets[petId] ? `Level ${getLevel(user.pets[petId].xp || 0)}` : "In inventory"
+  }));
+}
+
+function ownedFoodSelectOptions(user) {
+  user.inventory ||= {};
+  return Object.keys(petFoodItems)
+    .filter((foodId) => (user.inventory[foodId] || 0) > 0)
+    .slice(0, 25)
+    .map((foodId) => ({
+      label: itemById.get(foodId)?.name || foodId,
+      value: foodId,
+      description: `Feed all ${user.inventory[foodId].toLocaleString()}`
+    }));
+}
+
+function equipPet(user, petId) {
+  if (!petId || !petItems[petId]) {
+    return { ok: false, title: "Equip Failed", message: "Pick a pet to equip.", color: 0xed4245 };
+  }
+
+  user.pets ||= {};
+  if (!user.pets[petId]) {
+    if (!removeItem(user, petId)) {
+      return { ok: false, title: "Equip Failed", message: `You need that pet in your inventory first.`, color: 0xed4245 };
+    }
+
+    user.pets[petId] = {
+      id: petId,
+      xp: 0,
+      level: 1,
+      fedUntil: 0,
+      lastIdleAt: Date.now(),
+      stash: {},
+      boosts: {}
+    };
+  }
+
+  user.equippedPet = petId;
+  return { ok: true, pet: normalizePet(user, petId), title: "Pet Equipped", color: 0x57f287 };
+}
+
+function feedPet(user, foodId, amount = null) {
+  const pet = getEquippedPet(user);
+  if (!pet) return { ok: false, title: "Feed Failed", message: "Equip a pet first.", color: 0xed4245 };
+  if (!foodId || !petFoodItems[foodId]) return { ok: false, title: "Feed Failed", message: "Pick a pet food.", color: 0xed4245 };
+
+  const quantity = amount || Math.floor(Number(user.inventory?.[foodId]) || 0);
+  if (quantity <= 0 || !removeItem(user, foodId, quantity)) {
+    return { ok: false, title: "Feed Failed", message: "You do not have that food.", color: 0xed4245 };
+  }
+
+  processPetIdleHunts(user);
+  const food = petFoodItems[foodId];
+  const now = Date.now();
+  pet.fedUntil = Math.max(now, pet.fedUntil) + food.foodMs * quantity;
+
+  if (food.boostMs > 0 && food.luckBoost > 1) {
+    const current = getPetBoost(pet, "luck");
+    pet.boosts.luck = {
+      multiplier: Math.max(food.luckBoost, current?.multiplier || 1),
+      expiresAt: Math.max(now, current?.expiresAt || 0) + food.boostMs * quantity
+    };
+  }
+
+  if (food.boostMs > 0 && food.speedBoost > 1) {
+    const current = getPetBoost(pet, "speed");
+    pet.boosts.speed = {
+      multiplier: Math.max(food.speedBoost, current?.multiplier || 1),
+      expiresAt: Math.max(now, current?.expiresAt || 0) + food.boostMs * quantity
+    };
+  }
+
+  return { ok: true, pet, foodId, quantity, title: "Pet Fed", color: 0x57f287 };
+}
+
 function normalizeBankLevel(user) {
   const level = Math.floor(Number(user.bankLevel) || 1);
   user.bankLevel = Math.min(bankLevels.length, Math.max(1, level));
@@ -1090,7 +1181,7 @@ async function replyEmbed(interaction, title, description, options = {}) {
 function makePetEmbed(interaction, outcome) {
   const pet = outcome.pet;
   if (!pet) {
-    return makeEmbed(interaction, "Pet", "Equip a pet with `/pet action: Equip` to start idle hunting.", {
+    return makeEmbed(interaction, "Pet", "Use the Equip button to choose a pet and start idle hunting.", {
       color: 0xfee75c
     });
   }
@@ -1117,9 +1208,21 @@ function makePetEmbed(interaction, outcome) {
   });
 }
 
-function makePetComponents(customIdPrefix, disabled = false) {
-  return [
+function makePetComponents(customIdPrefix, options = {}) {
+  const mode = options.mode || "menu";
+  const disabled = options.disabled || false;
+  const rows = [
     new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId(`${customIdPrefix}_equip`)
+        .setLabel("Equip")
+        .setStyle(ButtonStyle.Primary)
+        .setDisabled(disabled),
+      new ButtonBuilder()
+        .setCustomId(`${customIdPrefix}_feed`)
+        .setLabel("Feed")
+        .setStyle(ButtonStyle.Primary)
+        .setDisabled(disabled),
       new ButtonBuilder()
         .setCustomId(`${customIdPrefix}_claim`)
         .setLabel("Claim")
@@ -1132,6 +1235,48 @@ function makePetComponents(customIdPrefix, disabled = false) {
         .setDisabled(disabled)
     )
   ];
+
+  if (mode === "equip") {
+    if (options.petOptions?.length) {
+      rows.push(new ActionRowBuilder().addComponents(
+        new StringSelectMenuBuilder()
+          .setCustomId(`${customIdPrefix}_equip_select`)
+          .setPlaceholder("Choose a pet to equip")
+          .addOptions(options.petOptions)
+          .setDisabled(disabled)
+      ));
+    } else {
+      rows.push(new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId(`${customIdPrefix}_noop`)
+          .setLabel("No pets owned")
+          .setStyle(ButtonStyle.Secondary)
+          .setDisabled(true)
+      ));
+    }
+  }
+
+  if (mode === "feed") {
+    if (options.foodOptions?.length) {
+      rows.push(new ActionRowBuilder().addComponents(
+        new StringSelectMenuBuilder()
+          .setCustomId(`${customIdPrefix}_feed_select`)
+          .setPlaceholder("Choose food to feed all")
+          .addOptions(options.foodOptions)
+          .setDisabled(disabled)
+      ));
+    } else {
+      rows.push(new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId(`${customIdPrefix}_noop`)
+          .setLabel("No pet food owned")
+          .setStyle(ButtonStyle.Secondary)
+          .setDisabled(true)
+      ));
+    }
+  }
+
+  return rows;
 }
 
 async function replyPetMenu(interaction) {
@@ -1143,13 +1288,12 @@ async function replyPetMenu(interaction) {
 
   await interaction.reply({
     embeds: [makePetEmbed(interaction, outcome)],
-    components: makePetComponents(customIdPrefix, !outcome.pet),
+    components: makePetComponents(customIdPrefix),
     ephemeral: true
   });
 
   const message = await interaction.fetchReply();
   const collector = message.createMessageComponentCollector({
-    componentType: ComponentType.Button,
     time: 90 * 1000
   });
 
@@ -1161,6 +1305,20 @@ async function replyPetMenu(interaction) {
 
     const result = await withStore((store) => {
       const user = getUser(store, interaction.user.id);
+      if (buttonInteraction.customId === `${customIdPrefix}_equip`) {
+        return { ...processPetIdleHunts(user), mode: "equip", petOptions: ownedPetSelectOptions(user) };
+      }
+      if (buttonInteraction.customId === `${customIdPrefix}_feed`) {
+        return { ...processPetIdleHunts(user), mode: "feed", foodOptions: ownedFoodSelectOptions(user) };
+      }
+      if (buttonInteraction.customId === `${customIdPrefix}_equip_select`) {
+        const equipped = equipPet(user, buttonInteraction.values[0]);
+        return { ...processPetIdleHunts(user), notice: equipped, mode: "menu" };
+      }
+      if (buttonInteraction.customId === `${customIdPrefix}_feed_select`) {
+        const fed = feedPet(user, buttonInteraction.values[0]);
+        return { ...processPetIdleHunts(user), notice: fed, mode: "menu" };
+      }
       if (buttonInteraction.customId === `${customIdPrefix}_claim`) {
         const claimed = claimPetStash(user);
         return { ...claimed, claimedNow: true };
@@ -1168,14 +1326,25 @@ async function replyPetMenu(interaction) {
       return processPetIdleHunts(user);
     });
 
+    const embed = makePetEmbed(interaction, result);
+    if (result.notice) {
+      embed.setDescription(result.notice.ok
+        ? `${embed.data.description}\n\n${result.notice.title}.`
+        : `${embed.data.description}\n\n${result.notice.message}`);
+    }
+
     await buttonInteraction.update({
-      embeds: [makePetEmbed(interaction, result)],
-      components: makePetComponents(customIdPrefix, !result.pet)
+      embeds: [embed],
+      components: makePetComponents(customIdPrefix, {
+        mode: result.mode,
+        petOptions: result.petOptions,
+        foodOptions: result.foodOptions
+      })
     });
   });
 
   collector.on("end", async () => {
-    await message.edit({ components: makePetComponents(customIdPrefix, true) }).catch(() => {});
+    await message.edit({ components: makePetComponents(customIdPrefix, { disabled: true }) }).catch(() => {});
   });
 }
 
@@ -2446,176 +2615,9 @@ const commands = [
   {
     data: new SlashCommandBuilder()
       .setName("pet")
-      .setDescription("Manage your equipped pet.")
-      .addStringOption((option) =>
-        option
-          .setName("action")
-          .setDescription("What to do.")
-          .setRequired(false)
-          .addChoices(
-            { name: "Menu", value: "menu" },
-            { name: "Equip", value: "equip" },
-            { name: "Feed", value: "feed" },
-            { name: "Claim", value: "claim" }
-          )
-      )
-      .addStringOption((option) =>
-        option
-          .setName("pet")
-          .setDescription("Pet to equip.")
-          .setRequired(false)
-          .addChoices(...petChoices())
-      )
-      .addStringOption((option) =>
-        option
-          .setName("food")
-          .setDescription("Food to feed your equipped pet.")
-          .setRequired(false)
-          .addChoices(...petFoodChoices())
-      )
-      .addIntegerOption((option) =>
-        option.setName("amount").setDescription("Food amount.").setRequired(false).setMinValue(1).setMaxValue(1000)
-      ),
+      .setDescription("Open your pet menu."),
     async execute(interaction) {
-      const action = interaction.options.getString("action") || "menu";
-      const petId = interaction.options.getString("pet");
-      const foodId = interaction.options.getString("food");
-      const amount = interaction.options.getInteger("amount") || 1;
-
-      if (action === "menu") {
-        await replyPetMenu(interaction);
-        return;
-      }
-
-      if (action === "equip") {
-        const outcome = await withStore((store) => {
-          const user = getUser(store, interaction.user.id);
-
-          if (!petId || !petItems[petId]) {
-            return { title: "Equip Failed", message: "Pick a pet to equip.", color: 0xed4245 };
-          }
-
-          user.pets ||= {};
-          if (!user.pets[petId]) {
-            if (!removeItem(user, petId)) {
-              return {
-                title: "Equip Failed",
-                message: `You need ${formatItem(interaction, petId)} in your inventory first.`,
-                color: 0xed4245
-              };
-            }
-
-            user.pets[petId] = {
-              id: petId,
-              xp: 0,
-              level: 1,
-              fedUntil: 0,
-              lastIdleAt: Date.now(),
-              stash: {},
-              boosts: {}
-            };
-          }
-
-          user.equippedPet = petId;
-          const pet = normalizePet(user, petId);
-          return {
-            title: "Pet Equipped",
-            message: `${formatItem(interaction, petId)} is now your equipped pet.`,
-            color: 0x57f287,
-            pet
-          };
-        });
-
-        await replyEmbed(interaction, outcome.title, outcome.message, {
-          color: outcome.color,
-          ephemeral: true,
-          fields: outcome.pet ? [
-            { name: "Food", value: outcome.pet.fedUntil > Date.now() ? formatDuration(outcome.pet.fedUntil - Date.now()) : "Hungry", inline: true },
-            { name: "Level", value: `${getLevel(outcome.pet.xp)}`, inline: true }
-          ] : []
-        });
-        return;
-      }
-
-      if (action === "feed") {
-        const outcome = await withStore((store) => {
-          const user = getUser(store, interaction.user.id);
-          const pet = getEquippedPet(user);
-          if (!pet) return { title: "Feed Failed", message: "Equip a pet first.", color: 0xed4245 };
-          if (!foodId || !petFoodItems[foodId]) return { title: "Feed Failed", message: "Pick a pet food.", color: 0xed4245 };
-          if (!removeItem(user, foodId, amount)) {
-            return {
-              title: "Feed Failed",
-              message: `You do not have ${formatItem(interaction, foodId, amount)}.`,
-              color: 0xed4245
-            };
-          }
-
-          processPetIdleHunts(user);
-          const food = petFoodItems[foodId];
-          const now = Date.now();
-          pet.fedUntil = Math.max(now, pet.fedUntil) + food.foodMs * amount;
-          if (food.boostMs > 0 && food.luckBoost > 1) {
-            const current = getPetBoost(pet, "luck");
-            pet.boosts.luck = {
-              multiplier: Math.max(food.luckBoost, current?.multiplier || 1),
-              expiresAt: Math.max(now, current?.expiresAt || 0) + food.boostMs * amount
-            };
-          }
-          if (food.boostMs > 0 && food.speedBoost > 1) {
-            const current = getPetBoost(pet, "speed");
-            pet.boosts.speed = {
-              multiplier: Math.max(food.speedBoost, current?.multiplier || 1),
-              expiresAt: Math.max(now, current?.expiresAt || 0) + food.boostMs * amount
-            };
-          }
-
-          return {
-            title: "Pet Fed",
-            message: `${formatItem(interaction, pet.id)} ate ${formatItem(interaction, foodId, amount)}.`,
-            color: 0x57f287,
-            pet,
-            foodId,
-            amount
-          };
-        });
-
-        await replyEmbed(interaction, outcome.title, outcome.message, {
-          color: outcome.color,
-          ephemeral: true,
-          fields: outcome.pet ? [
-            { name: "Food Time", value: formatDuration(outcome.pet.fedUntil - Date.now()), inline: true },
-            { name: "Stash", value: formatPetStash(interaction, outcome.pet.stash), inline: false }
-          ] : []
-        });
-        return;
-      }
-
-      if (action === "claim") {
-        const outcome = await withStore((store) => {
-          const user = getUser(store, interaction.user.id);
-          const result = claimPetStash(user);
-          if (!result.pet) return { title: "Claim Failed", message: "Equip a pet first.", color: 0xed4245 };
-          return {
-            title: "Pet Stash Claimed",
-            message: Object.keys(result.claimed).length > 0
-              ? `${formatItem(interaction, result.pet.id)} brought everything back.`
-              : `${formatItem(interaction, result.pet.id)} has not found anything yet.`,
-            color: Object.keys(result.claimed).length > 0 ? 0x57f287 : 0xfee75c,
-            pet: result.pet,
-            claimed: result.claimed
-          };
-        });
-
-        await replyEmbed(interaction, outcome.title, outcome.message, {
-          color: outcome.color,
-          ephemeral: true,
-          fields: outcome.claimed ? [
-            { name: "Claimed", value: formatPetStash(interaction, outcome.claimed), inline: false },
-            ...(outcome.pet ? [{ name: "Pet Level", value: `${getLevel(outcome.pet.xp)}`, inline: true }] : [])
-          ] : []
-        });
-      }
+      await replyPetMenu(interaction);
     }
   },
   {
@@ -2903,7 +2905,7 @@ const commands = [
           };
         }
 
-        if (!bankDefenseItems[itemId] && !petFoodItems[itemId] && !["hackdevice", "void"].includes(itemId) && (user.inventory?.[itemId] || 0) > 0) {
+        if (!bankDefenseItems[itemId] && !petFoodItems[itemId] && !["hackdevice", "void"].includes(itemId) && ((user.inventory?.[itemId] || 0) > 0 || user.pets?.[itemId])) {
           return {
             title: "Purchase Failed",
             message: `You already own ${formatItem(interaction, itemId)}.`,
