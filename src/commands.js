@@ -75,13 +75,13 @@ const shopItems = [
 ];
 
 const petItems = {
-  basicdog: { name: "Basic Dog", baseLuck: 1, baseSpeed: 1 },
-  cat: { name: "Cat", baseLuck: 1.04, baseSpeed: 1 },
-  funnydog: { name: "Funny Dog", baseLuck: 1.02, baseSpeed: 1.08 },
-  geckodragon: { name: "Gecko Dragon", baseLuck: 1.08, baseSpeed: 1.04 },
-  lizard: { name: "Lizard", baseLuck: 1.05, baseSpeed: 1.05 },
-  rufus: { name: "Rufus", baseLuck: 1.12, baseSpeed: 1.02 },
-  smirkcat: { name: "Smirk Cat", baseLuck: 1.1, baseSpeed: 1.06 }
+  basicdog: { name: "Basic Dog", baseLuck: 1, baseSpeed: 1, huntIntervalMs: 30 * 60 * 1000 },
+  cat: { name: "Cat", baseLuck: 1.04, baseSpeed: 1, huntIntervalMs: 28 * 60 * 1000 },
+  funnydog: { name: "Funny Dog", baseLuck: 1.02, baseSpeed: 1.08, huntIntervalMs: 25 * 60 * 1000 },
+  lizard: { name: "Lizard", baseLuck: 1.05, baseSpeed: 1.05, huntIntervalMs: 24 * 60 * 1000 },
+  geckodragon: { name: "Gecko Dragon", baseLuck: 1.08, baseSpeed: 1.04, huntIntervalMs: 22 * 60 * 1000 },
+  rufus: { name: "Rufus", baseLuck: 1.12, baseSpeed: 1.02, huntIntervalMs: 20 * 60 * 1000 },
+  smirkcat: { name: "Smirk Cat", baseLuck: 1.1, baseSpeed: 1.06, huntIntervalMs: 18 * 60 * 1000 }
 };
 
 const petFoodItems = {
@@ -142,13 +142,13 @@ const items = [
   { id: "beans", name: "Beans", description: "Pet food. Adds 5 hours and a small speed boost.", weight: 25, sellValue: 100 },
   { id: "croissant", name: "Croissant", description: "Pet food. Adds 4 hours and a small luck boost.", weight: 24, sellValue: 110 },
   { id: "crunch", name: "Crunch", description: "Pet food. Adds 2 hours and a quick speed boost.", weight: 30, sellValue: 75 },
-  { id: "basicdog", name: "Basic Dog", description: "A pet you can equip with /pet.", weight: 6, sellValue: 2500 },
-  { id: "cat", name: "Cat", description: "A pet you can equip with /pet.", weight: 5, sellValue: 3000 },
-  { id: "funnydog", name: "Funny Dog", description: "A pet you can equip with /pet.", weight: 4, sellValue: 4500 },
-  { id: "geckodragon", name: "Gecko Dragon", description: "A pet you can equip with /pet.", weight: 3, sellValue: 6000 },
-  { id: "lizard", name: "Lizard", description: "A pet you can equip with /pet.", weight: 4, sellValue: 4200 },
-  { id: "rufus", name: "Rufus", description: "A pet you can equip with /pet.", weight: 2, sellValue: 8000 },
-  { id: "smirkcat", name: "Smirk Cat", description: "A pet you can equip with /pet.", weight: 2, sellValue: 8500 },
+  { id: "basicdog", name: "Basic Dog", description: "A pet you can equip with /pet.", weight: 0, sellValue: 2500 },
+  { id: "cat", name: "Cat", description: "A pet you can equip with /pet.", weight: 0, sellValue: 3000 },
+  { id: "funnydog", name: "Funny Dog", description: "A pet you can equip with /pet.", weight: 0, sellValue: 4500 },
+  { id: "geckodragon", name: "Gecko Dragon", description: "A pet you can equip with /pet.", weight: 0, sellValue: 6000 },
+  { id: "lizard", name: "Lizard", description: "A pet you can equip with /pet.", weight: 0, sellValue: 4200 },
+  { id: "rufus", name: "Rufus", description: "A pet you can equip with /pet.", weight: 0, sellValue: 8000 },
+  { id: "smirkcat", name: "Smirk Cat", description: "A pet you can equip with /pet.", weight: 0, sellValue: 8500 },
   { id: "alarm", name: "Alarm", description: "Use it to install a bank defense.", weight: 0, sellValue: 4000, usable: true },
   { id: "laser_grid", name: "Laser Grid", description: "Use it to install a bank defense.", weight: 0, sellValue: 12000, usable: true },
   { id: "land_mine", name: "Land Mine", description: "Use it to install a bank defense.", weight: 0, sellValue: 18000, usable: true },
@@ -613,7 +613,8 @@ function getPetStats(pet) {
 }
 
 function getPetHuntInterval(pet) {
-  return Math.max(5 * 60 * 1000, Math.floor(PET_IDLE_INTERVAL / getPetStats(pet).speed));
+  const baseInterval = petItems[pet.id]?.huntIntervalMs || PET_IDLE_INTERVAL;
+  return Math.max(5 * 60 * 1000, Math.floor(baseInterval / getPetStats(pet).speed));
 }
 
 function formatPetNextHunt(pet) {
@@ -1381,6 +1382,7 @@ function makePetEmbed(interaction, outcome) {
   }
 
   const stats = getPetStats(pet);
+  const baseInterval = petItems[pet.id]?.huntIntervalMs || PET_IDLE_INTERVAL;
   const fedText = pet.fedUntil > Date.now() ? formatDuration(pet.fedUntil - Date.now()) : "Hungry";
   const luckBoost = getPetBoost(pet, "luck");
   const speedBoost = getPetBoost(pet, "speed");
@@ -1395,7 +1397,7 @@ function makePetEmbed(interaction, outcome) {
       { name: "Level", value: `${getLevel(pet.xp)}\n${formatExperience(interaction, getExperienceUntilNextLevel(pet.xp))} to next level`, inline: true },
       { name: "Food", value: fedText, inline: true },
       { name: "Next Hunt", value: formatPetNextHunt(pet), inline: true },
-      { name: "Stats", value: `Luck x${stats.luck.toFixed(2)}\nSpeed x${stats.speed.toFixed(2)}`, inline: true },
+      { name: "Stats", value: `Luck x${stats.luck.toFixed(2)}\nSpeed x${stats.speed.toFixed(2)}\nBase hunt ${formatDuration(baseInterval)}`, inline: true },
       { name: "Boosts", value: boosts, inline: true },
       { name: "Idle Hunts", value: `${outcome.hunts || 0} new hunt(s) processed`, inline: true },
       { name: "Stash", value: formatPetStash(interaction, pet.stash), inline: false }

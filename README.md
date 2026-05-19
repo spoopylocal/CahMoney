@@ -75,3 +75,5 @@ npm start
 - `/gamble amount` - Risk coins for a chance to win more.
 - `/coinflip choice amount` - Bet on heads or tails.
 - `/leaderboard` - Show the richest users by net worth.
+
+Pets are bought from the shop. They do not drop from `/beg` or `/hunt`, and each pet has its own base idle hunt speed.
