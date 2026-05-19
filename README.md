@@ -60,7 +60,7 @@ npm start
 - `/beg` - Beg for coins with random outcomes.
 - `/work` - Work a goofy job for money.
 - `/daily` - Claim a daily reward.
-- `/bank` - View bank storage, upgrade costs, and installed defenses.
+- `/bank` - Open the bank menu to view storage, upgrade costs, and installed defenses.
 - `/deposit amount` - Move coins from wallet to bank.
 - `/withdraw amount` - Move coins from bank to wallet.
 - `/rob user` - Try to rob another user.
@@ -70,7 +70,7 @@ npm start
 - `/shop` and `/buy` - Buy pickaxes, bank defense items, tools, pet food, and pets. The shop menu supports page-based buying with quantities.
 - `/use item` - Use potions, charms, mystery blocks, or install bank defenses.
 - `/hunt` - Hunt for random items.
-- `/pet` - Open the pet menu to equip one pet, feed it, claim idle hunt drops, and view pet level/food time.
+- `/pet` - Open the pet menu to equip one pet, feed a chosen quantity, claim idle hunt drops, and view pet level/food time.
 - `/mine` - Mine for ores with your best pickaxe.
 - `/gamble amount` - Risk coins for a chance to win more.
 - `/coinflip choice amount` - Bet on heads or tails.

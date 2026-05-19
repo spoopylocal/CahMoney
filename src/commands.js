@@ -720,7 +720,7 @@ function ownedFoodSelectOptions(user) {
     .map((foodId) => ({
       label: itemById.get(foodId)?.name || foodId,
       value: foodId,
-      description: `Feed all ${user.inventory[foodId].toLocaleString()}`
+      description: `You have ${user.inventory[foodId].toLocaleString()}`
     }));
 }
 
@@ -750,12 +750,12 @@ function equipPet(user, petId) {
   return { ok: true, pet: normalizePet(user, petId), title: "Pet Equipped", color: 0x57f287 };
 }
 
-function feedPet(user, foodId, amount = null) {
+function feedPet(user, foodId, amount = 1) {
   const pet = getEquippedPet(user);
   if (!pet) return { ok: false, title: "Feed Failed", message: "Equip a pet first.", color: 0xed4245 };
   if (!foodId || !petFoodItems[foodId]) return { ok: false, title: "Feed Failed", message: "Pick a pet food.", color: 0xed4245 };
 
-  const quantity = amount || Math.floor(Number(user.inventory?.[foodId]) || 0);
+  const quantity = Math.floor(Number(amount) || 0);
   if (quantity <= 0 || !removeItem(user, foodId, quantity)) {
     return { ok: false, title: "Feed Failed", message: "You do not have that food.", color: 0xed4245 };
   }
@@ -1260,6 +1260,118 @@ async function replyEmbed(interaction, title, description, options = {}) {
   });
 }
 
+function getBankView(interaction, user, title = "Bank", message = "Your bank storage and defenses.", color = 0x5865f2) {
+  const current = getBankLevelInfo(user);
+  const next = getNextBankLevelInfo(user);
+  const nextText = next
+    ? `Level ${next.level}: ${formatCoins(next.capacity)} max\nUpgrade cost: ${formatMoney(interaction, current.upgradeCost)}`
+    : "Max level reached.";
+
+  return {
+    title,
+    message,
+    color,
+    current,
+    next,
+    fields: [
+      { name: "Storage", value: `${formatBankMoney(interaction, user.bank)} / ${formatCoins(current.capacity)}`, inline: true },
+      { name: "Level", value: `${current.level} / ${bankLevels.length}`, inline: true },
+      { name: "Next Upgrade", value: nextText, inline: true },
+      { name: "Defenses", value: formatBankDefenses(interaction, user), inline: false }
+    ]
+  };
+}
+
+function upgradeBank(interaction, user) {
+  const current = getBankLevelInfo(user);
+  const next = getNextBankLevelInfo(user);
+
+  if (!next) {
+    return getBankView(interaction, user, "Bank Maxed", "Your bank is already level 10.", 0xfee75c);
+  }
+
+  if (user.wallet < current.upgradeCost) {
+    return getBankView(
+      interaction,
+      user,
+      "Bank Upgrade Failed",
+      `You need ${formatMoney(interaction, current.upgradeCost)} in your wallet to upgrade to level ${next.level}.`,
+      0xed4245
+    );
+  }
+
+  user.wallet -= current.upgradeCost;
+  user.bankLevel = next.level;
+
+  return getBankView(
+    interaction,
+    user,
+    "Bank Upgraded",
+    `Your bank is now level ${next.level} with ${formatCoins(next.capacity)} max storage.`,
+    0x57f287
+  );
+}
+
+function makeBankComponents(customIdPrefix, disabled = false) {
+  return [
+    new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId(`${customIdPrefix}_upgrade`)
+        .setLabel("Upgrade")
+        .setStyle(ButtonStyle.Success)
+        .setDisabled(disabled),
+      new ButtonBuilder()
+        .setCustomId(`${customIdPrefix}_refresh`)
+        .setLabel("Refresh")
+        .setStyle(ButtonStyle.Secondary)
+        .setDisabled(disabled)
+    )
+  ];
+}
+
+async function replyBankMenu(interaction) {
+  const customIdPrefix = `bank_${interaction.id}`;
+
+  async function getView() {
+    return withStore((store) => getBankView(interaction, getUser(store, interaction.user.id)));
+  }
+
+  const view = await getView();
+  await interaction.reply({
+    embeds: [makeEmbed(interaction, view.title, view.message, { color: view.color, fields: view.fields })],
+    components: makeBankComponents(customIdPrefix),
+    ephemeral: true
+  });
+
+  const message = await interaction.fetchReply();
+  const collector = message.createMessageComponentCollector({
+    componentType: ComponentType.Button,
+    time: 90 * 1000
+  });
+
+  collector.on("collect", async (buttonInteraction) => {
+    if (buttonInteraction.user.id !== interaction.user.id) {
+      await buttonInteraction.reply({ content: "This bank menu is not yours.", ephemeral: true });
+      return;
+    }
+
+    const result = await withStore((store) => {
+      const user = getUser(store, interaction.user.id);
+      if (buttonInteraction.customId === `${customIdPrefix}_upgrade`) return upgradeBank(interaction, user);
+      return getBankView(interaction, user);
+    });
+
+    await buttonInteraction.update({
+      embeds: [makeEmbed(interaction, result.title, result.message, { color: result.color, fields: result.fields })],
+      components: makeBankComponents(customIdPrefix)
+    });
+  });
+
+  collector.on("end", async () => {
+    await message.edit({ components: makeBankComponents(customIdPrefix, true) }).catch(() => {});
+  });
+}
+
 function makePetEmbed(interaction, outcome) {
   const pet = outcome.pet;
   if (!pet) {
@@ -1398,16 +1510,63 @@ async function replyPetMenu(interaction) {
         const equipped = equipPet(user, buttonInteraction.values[0]);
         return { ...processPetIdleHunts(user), notice: equipped, mode: "menu" };
       }
-      if (buttonInteraction.customId === `${customIdPrefix}_feed_select`) {
-        const fed = feedPet(user, buttonInteraction.values[0]);
-        return { ...processPetIdleHunts(user), notice: fed, mode: "menu" };
-      }
       if (buttonInteraction.customId === `${customIdPrefix}_claim`) {
         const claimed = claimPetStash(user);
         return { ...claimed, claimedNow: true };
       }
       return processPetIdleHunts(user);
     });
+
+    if (buttonInteraction.customId === `${customIdPrefix}_feed_select`) {
+      const foodId = buttonInteraction.values[0];
+      const item = itemById.get(foodId);
+      const modal = new ModalBuilder()
+        .setCustomId(`${customIdPrefix}_feed_modal_${foodId}`)
+        .setTitle(`Feed ${item?.name || foodId}`);
+      const amountInput = new TextInputBuilder()
+        .setCustomId("amount")
+        .setLabel("Quantity to feed")
+        .setPlaceholder("Type a number")
+        .setValue("1")
+        .setRequired(true)
+        .setStyle(TextInputStyle.Short);
+
+      modal.addComponents(new ActionRowBuilder().addComponents(amountInput));
+      await buttonInteraction.showModal(modal);
+
+      try {
+        const modalInteraction = await buttonInteraction.awaitModalSubmit({
+          time: 60 * 1000,
+          filter: (submitInteraction) =>
+            submitInteraction.user.id === interaction.user.id &&
+            submitInteraction.customId === `${customIdPrefix}_feed_modal_${foodId}`
+        });
+        const amount = Number.parseInt(modalInteraction.fields.getTextInputValue("amount").trim(), 10);
+        const result = await withStore((store) => {
+          const user = getUser(store, interaction.user.id);
+          const fed = feedPet(user, foodId, amount);
+          return { ...processPetIdleHunts(user), notice: fed, mode: "menu" };
+        });
+        const embed = makePetEmbed(interaction, result);
+        embed.setDescription(result.notice.ok
+          ? `${embed.data.description}\n\nFed ${formatItem(interaction, foodId, result.notice.quantity)}.`
+          : `${embed.data.description}\n\n${result.notice.message}`);
+
+        await modalInteraction.reply({
+          embeds: [makeEmbed(interaction, result.notice.title, result.notice.ok ? `Fed ${formatItem(interaction, foodId, result.notice.quantity)}.` : result.notice.message, { color: result.notice.color })],
+          ephemeral: true
+        });
+        await message.edit({
+          embeds: [embed],
+          components: makePetComponents(customIdPrefix)
+        });
+      } catch {
+        await message.edit({
+          components: makePetComponents(customIdPrefix)
+        }).catch(() => {});
+      }
+      return;
+    }
 
     const embed = makePetEmbed(interaction, result);
     if (result.notice) {
@@ -2305,81 +2464,9 @@ const commands = [
   {
     data: new SlashCommandBuilder()
       .setName("bank")
-      .setDescription("View or upgrade your bank storage.")
-      .addStringOption((option) =>
-        option
-          .setName("action")
-          .setDescription("What to do.")
-          .setRequired(false)
-          .addChoices({ name: "Info", value: "info" }, { name: "Upgrade", value: "upgrade" })
-      ),
+      .setDescription("Open your bank menu."),
     async execute(interaction) {
-      const action = interaction.options.getString("action") || "info";
-      const outcome = await withStore((store) => {
-        const user = getUser(store, interaction.user.id);
-        const current = getBankLevelInfo(user);
-        const next = getNextBankLevelInfo(user);
-
-        if (action === "upgrade") {
-          if (!next) {
-            return {
-              title: "Bank Maxed",
-              message: "Your bank is already level 10.",
-              color: 0xfee75c,
-              current,
-              next,
-              user
-            };
-          }
-
-          if (user.wallet < current.upgradeCost) {
-            return {
-              title: "Bank Upgrade Failed",
-              message: `You need ${formatMoney(interaction, current.upgradeCost)} in your wallet to upgrade to level ${next.level}.`,
-              color: 0xed4245,
-              current,
-              next,
-              user
-            };
-          }
-
-          user.wallet -= current.upgradeCost;
-          user.bankLevel = next.level;
-
-          return {
-            title: "Bank Upgraded",
-            message: `Your bank is now level ${next.level} with ${formatCoins(next.capacity)} max storage.`,
-            color: 0x57f287,
-            current: next,
-            next: getNextBankLevelInfo(user),
-            user
-          };
-        }
-
-        return {
-          title: "Bank",
-          message: "Your bank storage and defenses.",
-          color: 0x5865f2,
-          current,
-          next,
-          user
-        };
-      });
-
-      const nextText = outcome.next
-        ? `Level ${outcome.next.level}: ${formatCoins(outcome.next.capacity)} max\nUpgrade cost: ${formatMoney(interaction, outcome.current.upgradeCost)}`
-        : "Max level reached.";
-
-      await replyEmbed(interaction, outcome.title, outcome.message, {
-        color: outcome.color,
-        ephemeral: true,
-        fields: [
-          { name: "Storage", value: `${formatBankMoney(interaction, outcome.user.bank)} / ${formatCoins(outcome.current.capacity)}`, inline: true },
-          { name: "Level", value: `${outcome.current.level} / ${bankLevels.length}`, inline: true },
-          { name: "Next Upgrade", value: nextText, inline: true },
-          { name: "Defenses", value: formatBankDefenses(interaction, outcome.user), inline: false }
-        ]
-      });
+      await replyBankMenu(interaction);
     }
   },
   {
