@@ -728,7 +728,8 @@ function useInventoryItem(interaction, user, itemId) {
       title: "Bank Defense Installed",
       message: `${formatItem(interaction, itemId)} is now defending your bank.`,
       color: 0x57f287,
-      defenseId: itemId
+      defenseId: itemId,
+      ephemeral: true
     };
   }
 
@@ -1454,28 +1455,23 @@ const commands = [
 
       const result = await withStore((store) => {
         const user = getUser(store, target.id);
-        const bankLevel = getBankLevelInfo(user);
         return {
           wallet: user.wallet,
           bank: user.bank,
-          bankLevel: bankLevel.level,
-          bankCapacity: bankLevel.capacity,
-          bankDefenseChance: getBankDefenseBlockChance(user),
           netWorth: getNetWorth(user),
           experience: user.experience
         };
       });
 
-      await replyEmbed(interaction, `${target.username}'s Balance`, "Their financial choices are visible now.", {
+      const description = target.id === interaction.user.id
+        ? "Use `/bank` to privately manage storage upgrades and defenses."
+        : "Bank upgrades and defenses are private unless scanned with a Hack Device.";
+
+      await replyEmbed(interaction, `${target.username}'s Balance`, description, {
         color: 0x57f287,
         fields: [
           { name: "Wallet", value: formatMoney(interaction, result.wallet), inline: true },
-          {
-            name: "Bank",
-            value: `${formatBankMoney(interaction, result.bank)} / ${formatCoins(result.bankCapacity)}\nLevel ${result.bankLevel}`,
-            inline: true
-          },
-          { name: "Bank Defense", value: `${Math.round(result.bankDefenseChance * 100)}% block bonus`, inline: true },
+          { name: "Bank", value: formatBankMoney(interaction, result.bank), inline: true },
           { name: "Net Worth", value: formatMoney(interaction, result.netWorth), inline: true },
           {
             name: "Experience",
@@ -1721,6 +1717,7 @@ const commands = [
 
       await replyEmbed(interaction, outcome.title, outcome.message, {
         color: outcome.color,
+        ephemeral: true,
         fields: [
           { name: "Storage", value: `${formatBankMoney(interaction, outcome.user.bank)} / ${formatCoins(outcome.current.capacity)}`, inline: true },
           { name: "Level", value: `${outcome.current.level} / ${bankLevels.length}`, inline: true },
@@ -1786,7 +1783,7 @@ const commands = [
         };
       });
 
-      await replyEmbed(interaction, outcome.title, outcome.message, { color: outcome.color });
+      await replyEmbed(interaction, outcome.title, outcome.message, { color: outcome.color, ephemeral: true });
     }
   },
   {
@@ -1818,7 +1815,7 @@ const commands = [
         };
       });
 
-      await replyEmbed(interaction, outcome.title, outcome.message, { color: outcome.color });
+      await replyEmbed(interaction, outcome.title, outcome.message, { color: outcome.color, ephemeral: true });
     }
   },
   {
@@ -2059,6 +2056,7 @@ const commands = [
 
       await replyEmbed(interaction, outcome.title, outcome.message, {
         color: outcome.color,
+        ephemeral: true,
         fields: outcome.targetUser ? [
           { name: "Defenses", value: formatBankDefenses(interaction, outcome.targetUser), inline: false }
         ] : []
@@ -2114,6 +2112,7 @@ const commands = [
 
       await replyEmbed(interaction, outcome.title, outcome.message, {
         color: outcome.color,
+        ephemeral: true,
         fields: [
           ...(outcome.removedId ? [{ name: "Removed", value: formatItem(interaction, outcome.removedId), inline: true }] : []),
           ...(outcome.victim ? [{ name: "Remaining Defenses", value: formatBankDefenses(interaction, outcome.victim), inline: false }] : [])
@@ -2207,6 +2206,7 @@ const commands = [
 
       await replyEmbed(interaction, outcome.title, outcome.message, {
         color: outcome.color,
+        ephemeral: outcome.ephemeral || false,
         fields: [
           ...(outcome.coins ? [{ name: outcome.coinsLabel || "Coins", value: formatMoney(interaction, outcome.coins), inline: true }] : []),
           ...(outcome.itemId ? [{ name: "Item Found", value: formatItem(interaction, outcome.itemId), inline: true }] : []),
