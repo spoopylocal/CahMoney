@@ -46,32 +46,39 @@ const bankDefenseItems = {
   guard: { name: "Guard", blockChance: 0.2, consumeChance: 0.35, effect: "fine" },
   alarm: { name: "Alarm", blockChance: 0.05, consumeChance: 0.35, effect: "alert" }
 };
+const shopCategories = [
+  { id: "bank", name: "Bank", color: 0x5865f2 },
+  { id: "food", name: "Food", color: 0x57f287 },
+  { id: "pets", name: "Pets", color: 0xfee75c },
+  { id: "mine", name: "Mine", color: 0x95a5a6 },
+  { id: "black_market", name: "Black Market", color: 0x2b2d31 }
+];
 const shopItems = [
-  { itemId: "stone_pickaxe", price: 3500 },
-  { itemId: "iron_pickaxe", price: 10250 },
-  { itemId: "gold_pickaxe", price: 25000 },
-  { itemId: "diamond_pickaxe", price: 45000 },
-  { itemId: "netherite_pickaxe", price: 125000 },
-  { itemId: "alarm", price: 15000 },
-  { itemId: "laser_grid", price: 45000 },
-  { itemId: "land_mine", price: 70000 },
-  { itemId: "guard", price: 100000 },
-  { itemId: "hackdevice", price: 100000 },
-  { itemId: "void", price: 150000 },
-  { itemId: "watermelon", price: 650 },
-  { itemId: "toco", price: 900 },
-  { itemId: "orange", price: 350 },
-  { itemId: "meat", price: 1400 },
-  { itemId: "beans", price: 750 },
-  { itemId: "croissant", price: 800 },
-  { itemId: "crunch", price: 450 },
-  { itemId: "basicdog", price: 25000 },
-  { itemId: "cat", price: 30000 },
-  { itemId: "funnydog", price: 45000 },
-  { itemId: "geckodragon", price: 60000 },
-  { itemId: "lizard", price: 42000 },
-  { itemId: "rufus", price: 80000 },
-  { itemId: "smirkcat", price: 85000 }
+  { itemId: "stone_pickaxe", price: 3500, category: "mine" },
+  { itemId: "iron_pickaxe", price: 10250, category: "mine" },
+  { itemId: "gold_pickaxe", price: 25000, category: "mine" },
+  { itemId: "diamond_pickaxe", price: 45000, category: "mine" },
+  { itemId: "netherite_pickaxe", price: 125000, category: "mine" },
+  { itemId: "alarm", price: 15000, category: "bank" },
+  { itemId: "laser_grid", price: 45000, category: "bank" },
+  { itemId: "land_mine", price: 70000, category: "bank" },
+  { itemId: "guard", price: 100000, category: "bank" },
+  { itemId: "hackdevice", price: 100000, category: "black_market" },
+  { itemId: "void", price: 150000, category: "black_market" },
+  { itemId: "watermelon", price: 650, category: "food" },
+  { itemId: "toco", price: 900, category: "food" },
+  { itemId: "orange", price: 350, category: "food" },
+  { itemId: "meat", price: 1400, category: "food" },
+  { itemId: "beans", price: 750, category: "food" },
+  { itemId: "croissant", price: 800, category: "food" },
+  { itemId: "crunch", price: 450, category: "food" },
+  { itemId: "basicdog", price: 25000, category: "pets" },
+  { itemId: "cat", price: 30000, category: "pets" },
+  { itemId: "funnydog", price: 45000, category: "pets" },
+  { itemId: "geckodragon", price: 60000, category: "pets" },
+  { itemId: "lizard", price: 42000, category: "pets" },
+  { itemId: "rufus", price: 80000, category: "pets" },
+  { itemId: "smirkcat", price: 85000, category: "pets" }
 ];
 
 const petItems = {
@@ -1152,6 +1159,14 @@ function getShopItem(itemId) {
   return shopItems.find((entry) => entry.itemId === itemId) || null;
 }
 
+function getShopCategory(categoryId) {
+  return shopCategories.find((category) => category.id === categoryId) || shopCategories[0];
+}
+
+function getShopItemsByCategory(categoryId) {
+  return shopItems.filter((shopItem) => shopItem.category === categoryId);
+}
+
 function isStackableShopItem(itemId) {
   return Boolean(bankDefenseItems[itemId] || petFoodItems[itemId] || ["hackdevice", "void"].includes(itemId));
 }
@@ -1765,16 +1780,17 @@ function getInventoryPageCount(entries) {
   return Math.max(1, Math.ceil(entries.length / PAGE_SIZE));
 }
 
-function makeShopRows(interaction) {
-  return shopItems.map((shopItem, index) => {
+function makeShopRows(interaction, categoryItems) {
+  return categoryItems.map((shopItem, index) => {
     const item = itemById.get(shopItem.itemId);
     return `**#${index + 1} ${formatItem(interaction, shopItem.itemId)}**\n${item?.description || "No description."}\nPrice: ${formatMoney(interaction, shopItem.price)}`;
   });
 }
 
-function makeShopComponents(interaction, customIdPrefix, page, totalPages) {
+function makeShopComponents(interaction, customIdPrefix, page, totalPages, categoryId) {
   const components = makePagedRows(customIdPrefix, page, totalPages);
-  const visibleItems = shopItems.slice(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE);
+  const categoryItems = getShopItemsByCategory(categoryId);
+  const visibleItems = categoryItems.slice(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE);
 
   if (visibleItems.length > 0) {
     components.unshift(
@@ -1796,24 +1812,39 @@ function makeShopComponents(interaction, customIdPrefix, page, totalPages) {
     );
   }
 
+  components.push(
+    new ActionRowBuilder().addComponents(
+      ...shopCategories.map((category) =>
+        new ButtonBuilder()
+          .setCustomId(`${customIdPrefix}_category_${category.id}`)
+          .setLabel(category.name)
+          .setStyle(category.id === categoryId ? ButtonStyle.Primary : ButtonStyle.Secondary)
+      )
+    )
+  );
+
   return components;
 }
 
 async function replyShopMenu(interaction) {
   let page = 0;
-  const totalPages = Math.max(1, Math.ceil(shopItems.length / PAGE_SIZE));
+  let categoryId = "bank";
   const customIdPrefix = `shop_${interaction.id}`;
 
   async function render(message = null) {
-    const rows = makeShopRows(interaction);
+    const category = getShopCategory(categoryId);
+    const categoryItems = getShopItemsByCategory(categoryId);
+    const rows = makeShopRows(interaction, categoryItems);
+    const totalPages = Math.max(1, Math.ceil(categoryItems.length / PAGE_SIZE));
+    page = Math.min(page, totalPages - 1);
     const payload = {
       embeds: [
-        makePagedEmbed(interaction, "Shop", rows, page, {
+        makePagedEmbed(interaction, `Shop - ${category.name}`, rows, page, {
           emptyText: "The shop is empty right now. Very exclusive. Suspiciously exclusive.",
-          color: 0xfee75c
+          color: category.color
         })
       ],
-      components: makeShopComponents(interaction, customIdPrefix, page, totalPages)
+      components: makeShopComponents(interaction, customIdPrefix, page, totalPages, categoryId)
     };
 
     if (message) {
@@ -1839,6 +1870,19 @@ async function replyShopMenu(interaction) {
     }
 
     if (componentInteraction.isButton()) {
+      const categoryPrefix = `${customIdPrefix}_category_`;
+      if (componentInteraction.customId.startsWith(categoryPrefix)) {
+        categoryId = componentInteraction.customId.slice(categoryPrefix.length);
+        page = 0;
+        await componentInteraction.deferUpdate();
+        await render(message);
+        return;
+      }
+
+      const category = getShopCategory(categoryId);
+      const categoryItems = getShopItemsByCategory(categoryId);
+      const totalPages = Math.max(1, Math.ceil(categoryItems.length / PAGE_SIZE));
+
       if (componentInteraction.customId.endsWith("_first")) page = 0;
       if (componentInteraction.customId.endsWith("_prev")) page = Math.max(0, page - 1);
       if (componentInteraction.customId.endsWith("_next")) page = Math.min(totalPages - 1, page + 1);
@@ -1846,12 +1890,12 @@ async function replyShopMenu(interaction) {
 
       await componentInteraction.update({
         embeds: [
-          makePagedEmbed(interaction, "Shop", makeShopRows(interaction), page, {
+          makePagedEmbed(interaction, `Shop - ${category.name}`, makeShopRows(interaction, categoryItems), page, {
             emptyText: "The shop is empty right now. Very exclusive. Suspiciously exclusive.",
-            color: 0xfee75c
+            color: category.color
           })
         ],
-        components: makeShopComponents(interaction, customIdPrefix, page, totalPages)
+        components: makeShopComponents(interaction, customIdPrefix, page, totalPages, categoryId)
       });
       return;
     }
@@ -1898,7 +1942,8 @@ async function replyShopMenu(interaction) {
   });
 
   collector.on("end", async () => {
-    const disabledComponents = makeShopComponents(interaction, customIdPrefix, page, totalPages);
+    const totalPages = Math.max(1, Math.ceil(getShopItemsByCategory(categoryId).length / PAGE_SIZE));
+    const disabledComponents = makeShopComponents(interaction, customIdPrefix, page, totalPages, categoryId);
 
     for (const row of disabledComponents) {
       row.components.forEach((component) => component.setDisabled(true));
