@@ -475,36 +475,56 @@ function makeBlackjackButtons(game, disabled = false) {
   ];
 }
 
-function drawHighLowRoll(excludeValue = null) {
-  let value = randomInt(0, 100);
-  if (excludeValue !== null) {
-    while (value === excludeValue) value = randomInt(0, 100);
-  }
-  return value;
+function drawHighLowRoll() {
+  return randomInt(0, 100);
 }
 
-function getHighLowPayout(bet, streak) {
-  return Math.floor(bet * (1 + streak * 0.45));
+function getHighLowChance(threshold, guess) {
+  const winningNumbers = guess === "above" ? 100 - threshold : threshold;
+  return winningNumbers / 101;
+}
+
+function getHighLowPayout(bet, threshold, guess) {
+  const chance = getHighLowChance(threshold, guess);
+  if (chance <= 0) return 0;
+  return Math.floor(bet * Math.min(50, Math.max(1.05, 0.95 / chance)));
 }
 
 function makeHighLowButtons(game, disabled = false) {
   return [
     new ActionRowBuilder().addComponents(
       new ButtonBuilder()
+        .setCustomId("highlow_down10")
+        .setLabel("-10")
+        .setStyle(ButtonStyle.Secondary)
+        .setDisabled(disabled || game.finished || game.threshold <= 1),
+      new ButtonBuilder()
+        .setCustomId("highlow_down1")
+        .setLabel("-1")
+        .setStyle(ButtonStyle.Secondary)
+        .setDisabled(disabled || game.finished || game.threshold <= 1),
+      new ButtonBuilder()
+        .setCustomId("highlow_up1")
+        .setLabel("+1")
+        .setStyle(ButtonStyle.Secondary)
+        .setDisabled(disabled || game.finished || game.threshold >= 99),
+      new ButtonBuilder()
+        .setCustomId("highlow_up10")
+        .setLabel("+10")
+        .setStyle(ButtonStyle.Secondary)
+        .setDisabled(disabled || game.finished || game.threshold >= 99)
+    ),
+    new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
         .setCustomId("highlow_higher")
         .setLabel("Above")
         .setStyle(ButtonStyle.Primary)
-        .setDisabled(disabled || game.finished || game.currentRoll >= 100),
+        .setDisabled(disabled || game.finished || game.threshold >= 100),
       new ButtonBuilder()
         .setCustomId("highlow_lower")
         .setLabel("Below")
         .setStyle(ButtonStyle.Primary)
-        .setDisabled(disabled || game.finished || game.currentRoll <= 0),
-      new ButtonBuilder()
-        .setCustomId("highlow_cashout")
-        .setLabel("Cash Out")
-        .setStyle(ButtonStyle.Success)
-        .setDisabled(disabled || game.finished || game.streak <= 0)
+        .setDisabled(disabled || game.finished || game.threshold <= 0)
     )
   ];
 }
@@ -515,13 +535,17 @@ function formatHighLowBar(value) {
 }
 
 function makeHighLowEmbed(interaction, game) {
-  return makeEmbed(interaction, game.title || "Highlow", game.message || "Guess whether the next roll will be above or below the current percent.", {
+  const aboveChance = getHighLowChance(game.threshold, "above");
+  const belowChance = getHighLowChance(game.threshold, "below");
+
+  return makeEmbed(interaction, game.title || "Highlow", game.message || "Move the percent bar, then guess whether the roll lands above or below it.", {
     color: game.color || 0x5865f2,
     fields: [
-      { name: "Current Roll", value: formatHighLowBar(game.currentRoll), inline: false },
+      { name: "Threshold", value: formatHighLowBar(game.threshold), inline: false },
       { name: "Bet", value: formatMoney(interaction, game.bet), inline: true },
-      { name: "Streak", value: game.streak.toLocaleString(), inline: true },
-      { name: "Cash Out", value: formatMoney(interaction, getHighLowPayout(game.bet, game.streak)), inline: true }
+      { name: "Above", value: `${Math.round(aboveChance * 100)}% chance\nPays ${formatMoney(interaction, getHighLowPayout(game.bet, game.threshold, "above"))}`, inline: true },
+      { name: "Below", value: `${Math.round(belowChance * 100)}% chance\nPays ${formatMoney(interaction, getHighLowPayout(game.bet, game.threshold, "below"))}`, inline: true },
+      ...(typeof game.lastRoll === "number" ? [{ name: "Roll", value: `${game.lastRoll}%`, inline: true }] : [])
     ]
   });
 }
@@ -3658,7 +3682,7 @@ const commands = [
   {
     data: new SlashCommandBuilder()
       .setName("highlow")
-      .setDescription("Guess whether the next percent roll is above or below.")
+      .setDescription("Set a percent threshold and guess whether the roll is above or below.")
       .addIntegerOption((option) =>
         option.setName("amount").setDescription("Amount to bet.").setRequired(true).setMinValue(1)
       ),
@@ -3679,7 +3703,10 @@ const commands = [
 
         user.wallet -= bet.amount;
         const rig = consumeRig(user, "highlow");
-        return { ok: true, bet: bet.amount, rigOutcome: rig?.outcome || null };
+        const rigRoll = Number.isInteger(rig?.highlowRoll) && rig.highlowRoll >= 0 && rig.highlowRoll <= 100
+          ? rig.highlowRoll
+          : null;
+        return { ok: true, bet: bet.amount, rigOutcome: rig?.outcome || null, rigRoll };
       });
 
       if (!start.ok) {
@@ -3689,13 +3716,13 @@ const commands = [
 
       const game = {
         bet: start.bet,
-        currentRoll: drawHighLowRoll(),
-        streak: 0,
-        maxStreak: 8,
+        threshold: 50,
+        lastRoll: null,
         finished: false,
         rigOutcome: start.rigOutcome,
+        rigRoll: start.rigRoll,
         title: "Highlow",
-        message: "Will the next roll be above or below this percent?",
+        message: "Move the threshold, then guess Above or Below.",
         color: 0x5865f2
       };
 
@@ -3723,51 +3750,51 @@ const commands = [
           return;
         }
 
-        if (buttonInteraction.customId === "highlow_cashout") {
-          const payout = getHighLowPayout(game.bet, game.streak);
-          const xp = await withStore((store) => {
-            const user = getUser(store, interaction.user.id);
-            user.wallet += payout;
-            return addExperience(user, 8 + game.streak * 2, 14 + game.streak * 3);
-          });
+        const thresholdMoves = {
+          highlow_down10: -10,
+          highlow_down1: -1,
+          highlow_up1: 1,
+          highlow_up10: 10
+        };
 
-          game.finished = true;
-          game.title = "Highlow Cashed Out";
-          game.message = `You cashed out ${formatMoney(interaction, payout)} after ${game.streak} correct guess(es). ${formatExperience(interaction, xp)} earned.`;
-          game.color = 0x57f287;
+        if (buttonInteraction.customId in thresholdMoves) {
+          game.threshold = Math.min(99, Math.max(1, game.threshold + thresholdMoves[buttonInteraction.customId]));
+          game.title = "Highlow";
+          game.message = "Move the threshold, then guess Above or Below.";
+          game.color = 0x5865f2;
           await buttonInteraction.update({
             embeds: [makeHighLowEmbed(interaction, game)],
-            components: makeHighLowButtons(game, true)
+            components: makeHighLowButtons(game)
           });
-          collector.stop("cashout");
           return;
         }
 
         const guess = buttonInteraction.customId === "highlow_higher" ? "above" : "below";
-        let nextRoll = drawHighLowRoll(game.currentRoll);
+        let nextRoll = game.rigRoll ?? drawHighLowRoll();
 
-        if (game.rigOutcome === "win" || game.rigOutcome === "blackjack") {
+        if (game.rigRoll === null && (game.rigOutcome === "win" || game.rigOutcome === "blackjack")) {
           const validValues = Array.from({ length: 101 }, (_, index) => index)
-            .filter((value) => guess === "above" ? value > game.currentRoll : value < game.currentRoll);
+            .filter((value) => guess === "above" ? value > game.threshold : value < game.threshold);
           if (validValues.length > 0) {
             const value = validValues[randomInt(0, validValues.length - 1)];
             nextRoll = value;
           }
         }
 
-        if (game.rigOutcome === "lose") {
+        if (game.rigRoll === null && game.rigOutcome === "lose") {
           const badValues = Array.from({ length: 101 }, (_, index) => index)
-            .filter((value) => guess === "above" ? value < game.currentRoll : value > game.currentRoll);
+            .filter((value) => guess === "above" ? value < game.threshold : value > game.threshold);
           if (badValues.length > 0) {
             const value = badValues[randomInt(0, badValues.length - 1)];
             nextRoll = value;
           }
         }
         game.rigOutcome = null;
+        game.rigRoll = null;
 
         const correct = guess === "above"
-          ? nextRoll > game.currentRoll
-          : nextRoll < game.currentRoll;
+          ? nextRoll > game.threshold
+          : nextRoll < game.threshold;
 
         if (!correct) {
           const xp = await withStore((store) => {
@@ -3777,9 +3804,9 @@ const commands = [
 
           game.finished = true;
           game.title = "Highlow Lost";
-          game.message = `You guessed ${guess}, but the next roll was ${nextRoll}%. You lost ${formatMoney(interaction, game.bet)}. ${formatExperience(interaction, xp)} earned.`;
+          game.message = `You guessed ${guess} ${game.threshold}%, but the roll landed on ${nextRoll}%. You lost ${formatMoney(interaction, game.bet)}. ${formatExperience(interaction, xp)} earned.`;
           game.color = 0xed4245;
-          game.currentRoll = nextRoll;
+          game.lastRoll = nextRoll;
           await buttonInteraction.update({
             embeds: [makeHighLowEmbed(interaction, game)],
             components: makeHighLowButtons(game, true)
@@ -3788,36 +3815,23 @@ const commands = [
           return;
         }
 
-        game.streak += 1;
-        game.currentRoll = nextRoll;
+        const payout = getHighLowPayout(game.bet, game.threshold, guess);
+        const xp = await withStore((store) => {
+          const user = getUser(store, interaction.user.id);
+          user.wallet += payout;
+          return addExperience(user, 10, 22);
+        });
 
-        if (game.streak >= game.maxStreak) {
-          const payout = getHighLowPayout(game.bet, game.streak);
-          const xp = await withStore((store) => {
-            const user = getUser(store, interaction.user.id);
-            user.wallet += payout;
-            return addExperience(user, 25, 45);
-          });
-
-          game.finished = true;
-          game.title = "Highlow Max Streak";
-          game.message = `Perfect run. You hit ${game.streak} correct guesses and won ${formatMoney(interaction, payout)}. ${formatExperience(interaction, xp)} earned.`;
-          game.color = 0x57f287;
-          await buttonInteraction.update({
-            embeds: [makeHighLowEmbed(interaction, game)],
-            components: makeHighLowButtons(game, true)
-          });
-          collector.stop("max");
-          return;
-        }
-
-        game.title = "Highlow";
-        game.message = `Correct. The next roll was ${nextRoll}%. Keep going or cash out.`;
+        game.finished = true;
+        game.lastRoll = nextRoll;
+        game.title = "Highlow Won";
+        game.message = `You guessed ${guess} ${game.threshold}%, and the roll landed on ${nextRoll}%. You won ${formatMoney(interaction, payout)}. ${formatExperience(interaction, xp)} earned.`;
         game.color = 0x57f287;
         await buttonInteraction.update({
           embeds: [makeHighLowEmbed(interaction, game)],
-          components: makeHighLowButtons(game)
+          components: makeHighLowButtons(game, true)
         });
+        collector.stop("won");
       });
 
       collector.on("end", async () => {

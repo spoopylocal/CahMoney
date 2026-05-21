@@ -137,6 +137,14 @@ function cleanUser(input) {
   user.equippedPet = source.equippedPet || null;
   user.boosts = source.boosts && typeof source.boosts === "object" && !Array.isArray(source.boosts) ? source.boosts : {};
   user.rig = source.rig || null;
+  if (user.rig && typeof user.rig === "object") {
+    const highlowRoll = Math.floor(Number(user.rig.highlowRoll));
+    if (Number.isInteger(highlowRoll) && highlowRoll >= 0 && highlowRoll <= 100) {
+      user.rig.highlowRoll = highlowRoll;
+    } else {
+      delete user.rig.highlowRoll;
+    }
+  }
 
   for (const [itemId, quantity] of Object.entries(user.bankDefenses)) {
     const amount = Math.floor(Number(quantity) || 0);
@@ -398,6 +406,9 @@ function pageHtml() {
               <div><label>Game</label><select id="rigGame"></select></div>
               <div><label>Outcome</label><select id="rigOutcome"></select></div>
             </div>
+            <div class="grid-2">
+              <div><label>Highlow Next Roll</label><input id="rigHighlowRoll" type="number" min="0" max="100" placeholder="blank = random"></div>
+            </div>
             <label><input id="rigEnabled" type="checkbox" style="width:auto;margin-right:8px"> Rig this user's next matching game</label>
             <div id="rigPreview" class="rig-card muted">No rig active.</div>
           </div>
@@ -603,6 +614,7 @@ function renderRig(rig) {
   document.getElementById("rigEnabled").checked = enabled;
   document.getElementById("rigGame").value = rig?.game || "next";
   document.getElementById("rigOutcome").value = rig?.outcome || "win";
+  document.getElementById("rigHighlowRoll").value = Number.isInteger(rig?.highlowRoll) ? rig.highlowRoll : "";
   updateRigPreview();
 }
 
@@ -610,9 +622,12 @@ function updateRigPreview() {
   const enabled = document.getElementById("rigEnabled").checked;
   const game = document.getElementById("rigGame").value;
   const outcome = document.getElementById("rigOutcome").value;
+  const highlowRoll = document.getElementById("rigHighlowRoll").value;
   const preview = document.getElementById("rigPreview");
 
-  preview.textContent = enabled ? "Active: " + game + " -> " + outcome : "No rig active.";
+  preview.textContent = enabled
+    ? "Active: " + game + " -> " + outcome + (game === "highlow" && highlowRoll !== "" ? " | next roll " + highlowRoll + "%" : "")
+    : "No rig active.";
 }
 
 function clearRig() {
@@ -728,11 +743,18 @@ function collectUser() {
     if (expiresAt > 0) user.boosts[row.dataset.boostId] = expiresAt;
   });
   user.rig = document.getElementById("rigEnabled").checked
-    ? {
+    ? (() => {
+        const rig = {
         game: document.getElementById("rigGame").value,
         outcome: document.getElementById("rigOutcome").value,
         setAt: Date.now()
-      }
+        };
+        const highlowRoll = Number(document.getElementById("rigHighlowRoll").value);
+        if (rig.game === "highlow" && Number.isInteger(highlowRoll) && highlowRoll >= 0 && highlowRoll <= 100) {
+          rig.highlowRoll = highlowRoll;
+        }
+        return rig;
+      })()
     : null;
   return user;
 }
@@ -773,7 +795,7 @@ function status(text) {
 applyTheme();
 boot().catch((error) => alert(error.message));
 document.addEventListener("change", (event) => {
-  if (["rigEnabled", "rigGame", "rigOutcome"].includes(event.target.id)) updateRigPreview();
+  if (["rigEnabled", "rigGame", "rigOutcome", "rigHighlowRoll"].includes(event.target.id)) updateRigPreview();
 });
 </script>
 </body>
