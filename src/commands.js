@@ -1287,6 +1287,34 @@ async function replyEmbed(interaction, title, description, options = {}) {
   });
 }
 
+async function notifyBankAlarmOwner(interaction, target, outcome) {
+  if (!outcome.alarm) return false;
+
+  const serverName = interaction.guild?.name || "a server";
+  const result = outcome.title === "Bankrob Worked"
+    ? `${interaction.user.username} stole ${formatBankMoney(interaction, outcome.coins || 0)} from your bank.`
+    : `${interaction.user.username} tried to rob your bank, but the result was: ${outcome.title}.`;
+
+  try {
+    const user = await interaction.client.users.fetch(target.id);
+    await user.send({
+      embeds: [
+        makeEmbed(interaction, "Bank Alarm", result, {
+          color: outcome.title === "Bankrob Worked" ? 0xed4245 : 0xfee75c,
+          fields: [
+            { name: "Server", value: serverName, inline: true },
+            { name: "Robber", value: `${interaction.user.username} (${interaction.user.id})`, inline: true },
+            { name: "Alarm", value: outcome.alarm.consumed ? "Alarm triggered and was used up." : "Alarm triggered and stayed installed.", inline: false }
+          ]
+        })
+      ]
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function getBankView(interaction, user, title = "Bank", message = "Your bank storage and defenses.", color = 0x5865f2) {
   const current = getBankLevelInfo(user);
   const next = getNextBankLevelInfo(user);
@@ -2783,6 +2811,8 @@ const commands = [
         embeds: [makeEmbed(interaction, outcome.title, outcome.message, { color: outcome.color, fields })],
         allowedMentions: outcome.alarm ? { users: [target.id] } : { parse: [] }
       });
+
+      await notifyBankAlarmOwner(interaction, target, outcome);
     }
   },
   {
