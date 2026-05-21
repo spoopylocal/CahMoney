@@ -1148,13 +1148,6 @@ function consumeRig(user, game) {
   return rig;
 }
 
-function shopChoices() {
-  return shopItems.map((shopItem) => {
-    const item = itemById.get(shopItem.itemId);
-    return { name: item?.name || shopItem.itemId, value: shopItem.itemId };
-  });
-}
-
 function getShopItem(itemId) {
   return shopItems.find((entry) => entry.itemId === itemId) || null;
 }
@@ -3285,38 +3278,6 @@ const commands = [
     data: new SlashCommandBuilder().setName("shop").setDescription("View the shop."),
     async execute(interaction) {
       await replyShopMenu(interaction);
-    }
-  },
-  {
-    data: new SlashCommandBuilder()
-      .setName("buy")
-      .setDescription("Buy an item from the shop.")
-      .addStringOption((option) =>
-        option
-          .setName("item")
-          .setDescription("Shop item to buy.")
-          .setRequired(true)
-          .addChoices(...shopChoices())
-      )
-      .addIntegerOption((option) =>
-        option.setName("quantity").setDescription("Quantity to buy.").setRequired(false).setMinValue(1)
-      ),
-    async execute(interaction) {
-      const itemId = interaction.options.getString("item");
-      const quantity = interaction.options.getInteger("quantity") || 1;
-
-      const outcome = await withStore((store) => {
-        const user = getUser(store, interaction.user.id);
-        return purchaseShopItem(interaction, user, itemId, quantity);
-      });
-
-      await replyEmbed(interaction, outcome.title, outcome.message, {
-        color: outcome.color,
-        fields: outcome.itemId ? [
-          { name: "Item", value: formatItem(interaction, outcome.itemId, outcome.amount), inline: true },
-          { name: "Total", value: formatMoney(interaction, outcome.totalPrice), inline: true }
-        ] : []
-      });
     }
   },
   {

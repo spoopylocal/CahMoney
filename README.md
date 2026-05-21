@@ -67,7 +67,7 @@ npm start
 - `/bankrob user` - Try to steal from another user's bank.
 - `/scanbank user` - Spend a Hack Device to scan a user's bank defenses.
 - `/voiddefense user` - Spend a Void to remove one random bank defense.
-- `/shop` and `/buy` - Buy pickaxes, bank defense items, tools, pet food, and pets. The shop menu has Bank, Food, Pets, Mine, and Black Market categories with page-based buying and quantities.
+- `/shop` - Buy pickaxes, bank defense items, tools, pet food, and pets. The shop menu has Bank, Food, Pets, Mine, and Black Market categories with page-based buying and quantities.
 - `/use item` - Use potions, charms, mystery blocks, or install bank defenses.
 - `/hunt` - Hunt for random items.
 - `/pet` - Open the pet menu to equip one pet, feed a chosen quantity, claim idle hunt drops, and view pet level/food time.
