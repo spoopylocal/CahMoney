@@ -87,7 +87,8 @@ const rigGames = [
   ["next", "Next Game"],
   ["gamble", "Gamble"],
   ["coinflip", "Coinflip"],
-  ["blackjack", "Blackjack"]
+  ["blackjack", "Blackjack"],
+  ["highlow", "Highlow"]
 ];
 
 const rigOutcomes = [

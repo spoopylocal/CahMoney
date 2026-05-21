@@ -73,6 +73,7 @@ npm start
 - `/pet` - Open the pet menu to equip one pet, feed a chosen quantity, claim idle hunt drops, and view pet level/food time.
 - `/mine` - Mine for ores with your best pickaxe.
 - `/gamble amount` - Risk coins for a chance to win more.
+- `/highlow amount` - Guess whether the next 0-100 roll is above or below, then cash out or keep going.
 - `/coinflip choice amount` - Bet on heads or tails.
 - `/leaderboard` - Show the richest users by net worth.
 
