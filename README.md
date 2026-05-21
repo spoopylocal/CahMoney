@@ -77,3 +77,5 @@ npm start
 - `/leaderboard` - Show the richest users by net worth.
 
 Pets are bought from the shop. They do not drop from `/beg` or `/hunt`, and each pet has its own base idle hunt speed.
+
+Bank defense slots unlock with bank level: levels 1-2 have 1 slot, levels 3-5 have 2 slots, and levels 6-10 have 3 slots.

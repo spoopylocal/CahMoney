@@ -804,6 +804,13 @@ function getBankSpace(user) {
   return Math.max(0, getBankLevelInfo(user).capacity - user.bank);
 }
 
+function getBankDefenseSlots(user) {
+  const level = normalizeBankLevel(user);
+  if (level <= 2) return 1;
+  if (level <= 5) return 2;
+  return 3;
+}
+
 function getBankDefenseEntries(user) {
   user.bankDefenses ||= {};
   return Object.entries(user.bankDefenses)
@@ -813,6 +820,10 @@ function getBankDefenseEntries(user) {
       return defense && amount > 0 ? { itemId, quantity: amount, ...defense } : null;
     })
     .filter(Boolean);
+}
+
+function getBankDefenseCount(user) {
+  return getBankDefenseEntries(user).reduce((sum, defense) => sum + defense.quantity, 0);
 }
 
 function getBankDefenseBlockChance(user) {
@@ -831,6 +842,12 @@ function formatBankDefenses(interaction, user) {
   return defenses
     .map((defense) => `${formatItem(interaction, defense.itemId, defense.quantity)} (${Math.round(defense.blockChance * 100)}% block each, ${formatDefenseEffect(defense)})`)
     .join("\n");
+}
+
+function formatBankDefenseSlots(user) {
+  const used = getBankDefenseCount(user);
+  const slots = getBankDefenseSlots(user);
+  return `${used} / ${slots}${used > slots ? " (over slot limit)" : ""}`;
 }
 
 function formatDefenseEffect(defense) {
@@ -948,6 +965,15 @@ function useInventoryItem(interaction, user, itemId) {
     };
   }
 
+  if (bankDefenseItems[itemId] && getBankDefenseCount(user) >= getBankDefenseSlots(user)) {
+    return {
+      title: "Bank Defense Full",
+      message: `Your level ${getBankLevelInfo(user).level} bank has ${formatBankDefenseSlots(user)} defense slots used. Upgrade your bank or remove a defense before installing another one.`,
+      color: 0xed4245,
+      ephemeral: true
+    };
+  }
+
   if (!removeItem(user, itemId)) {
     return {
       title: "Use Failed",
@@ -1000,7 +1026,7 @@ function useInventoryItem(interaction, user, itemId) {
 
     return {
       title: "Bank Defense Installed",
-      message: `${formatItem(interaction, itemId)} is now defending your bank.`,
+      message: `${formatItem(interaction, itemId)} is now defending your bank. Defense slots: ${formatBankDefenseSlots(user)}.`,
       color: 0x57f287,
       defenseId: itemId,
       ephemeral: true
@@ -1277,6 +1303,7 @@ function getBankView(interaction, user, title = "Bank", message = "Your bank sto
     fields: [
       { name: "Storage", value: `${formatBankMoney(interaction, user.bank)} / ${formatCoins(current.capacity)}`, inline: true },
       { name: "Level", value: `${current.level} / ${bankLevels.length}`, inline: true },
+      { name: "Defense Slots", value: formatBankDefenseSlots(user), inline: true },
       { name: "Next Upgrade", value: nextText, inline: true },
       { name: "Defenses", value: formatBankDefenses(interaction, user), inline: false }
     ]
@@ -2802,6 +2829,7 @@ const commands = [
         color: outcome.color,
         ephemeral: true,
         fields: outcome.targetUser ? [
+          { name: "Defense Slots", value: formatBankDefenseSlots(outcome.targetUser), inline: true },
           { name: "Defenses", value: formatBankDefenses(interaction, outcome.targetUser), inline: false }
         ] : []
       });
@@ -2859,6 +2887,7 @@ const commands = [
         ephemeral: true,
         fields: [
           ...(outcome.removedId ? [{ name: "Removed", value: formatItem(interaction, outcome.removedId), inline: true }] : []),
+          ...(outcome.victim ? [{ name: "Defense Slots", value: formatBankDefenseSlots(outcome.victim), inline: true }] : []),
           ...(outcome.victim ? [{ name: "Remaining Defenses", value: formatBankDefenses(interaction, outcome.victim), inline: false }] : [])
         ]
       });
