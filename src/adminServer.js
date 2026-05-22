@@ -321,40 +321,50 @@ function pageHtml() {
   <title>CahMoney Admin</title>
   <style>
     :root {
-      --bg: #f4f7fb;
+      --bg: #eef2f7;
       --surface: #ffffff;
       --surface-2: #f8fafc;
-      --text: #172033;
+      --surface-3: #eef4ff;
+      --text: #152033;
       --muted: #667085;
-      --border: #d7deea;
+      --border: #d5deeb;
       --primary: #2563eb;
       --primary-strong: #1d4ed8;
       --danger: #dc2626;
-      --shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
+      --success: #15803d;
+      --warning: #b45309;
+      --shadow: 0 14px 36px rgba(15, 23, 42, 0.08);
     }
     body.dark {
       --bg: #0d1117;
       --surface: #151b23;
       --surface-2: #0f1620;
+      --surface-3: #122238;
       --text: #e5edf7;
       --muted: #96a3b4;
       --border: #2b3544;
       --primary: #3b82f6;
       --primary-strong: #60a5fa;
       --danger: #ef4444;
+      --success: #22c55e;
+      --warning: #f59e0b;
       --shadow: none;
     }
     * { box-sizing: border-box; }
-    body { margin: 0; font-family: Arial, sans-serif; color: var(--text); background: var(--bg); }
-    header { height: 64px; padding: 0 22px; background: var(--surface); border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; gap: 16px; position: sticky; top: 0; z-index: 2; }
-    main { display: grid; grid-template-columns: 380px 1fr; min-height: calc(100vh - 64px); }
-    aside { border-right: 1px solid var(--border); background: var(--surface); padding: 16px; overflow: auto; }
-    section { padding: 18px; overflow: auto; }
+    body { margin: 0; font-family: Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Arial, sans-serif; color: var(--text); background: var(--bg); }
+    header { min-height: 68px; padding: 0 24px; background: var(--surface); border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; gap: 16px; position: sticky; top: 0; z-index: 2; }
+    main { display: grid; grid-template-columns: minmax(300px, 370px) 1fr; min-height: calc(100vh - 68px); }
+    aside { border-right: 1px solid var(--border); background: var(--surface); padding: 18px; overflow: auto; }
+    section { padding: 20px; overflow: auto; }
     h1, h2, h3 { margin: 0; }
+    h1 { font-size: 28px; letter-spacing: 0; }
+    h2 { font-size: 19px; letter-spacing: 0; }
+    h3 { font-size: 16px; letter-spacing: 0; }
     input, textarea, select, button { font: inherit; }
     input, textarea, select { width: 100%; border: 1px solid var(--border); border-radius: 8px; padding: 10px 11px; color: var(--text); background: var(--surface-2); }
+    input:focus, textarea:focus, select:focus { outline: 2px solid rgba(37, 99, 235, 0.2); border-color: var(--primary); }
     textarea { min-height: 120px; font-family: Consolas, monospace; }
-    button { border: 0; border-radius: 8px; padding: 10px 13px; cursor: pointer; background: var(--primary); color: white; white-space: nowrap; }
+    button { border: 0; border-radius: 8px; padding: 10px 13px; cursor: pointer; background: var(--primary); color: white; white-space: nowrap; font-weight: 700; }
     button:hover { background: var(--primary-strong); }
     button.secondary { background: #64748b; }
     button.danger { background: var(--danger); }
@@ -366,27 +376,53 @@ function pageHtml() {
     .toolbar, .bar { display: flex; gap: 8px; align-items: center; }
     .panel { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 16px; margin-bottom: 16px; box-shadow: var(--shadow); }
     .panel-head { display: flex; justify-content: space-between; gap: 12px; align-items: center; margin-bottom: 14px; }
+    .panel-kicker { color: var(--muted); font-size: 12px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; margin-bottom: 5px; }
+    .editor-top { display: grid; grid-template-columns: 1fr auto; align-items: start; gap: 16px; }
+    .editor-actions { display: flex; gap: 8px; align-items: center; justify-content: flex-end; flex-wrap: wrap; }
+    .summary-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-top: 14px; }
+    .stat-card { border: 1px solid var(--border); border-radius: 8px; background: var(--surface-2); padding: 12px; min-width: 0; }
+    .stat-card span { display: block; color: var(--muted); font-size: 12px; margin-bottom: 4px; }
+    .stat-card strong { display: block; font-size: 18px; overflow-wrap: anywhere; }
     .grid-3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-bottom: 12px; }
     .grid-2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-bottom: 12px; }
     .user { border: 1px solid var(--border); border-radius: 8px; padding: 12px; margin-bottom: 9px; cursor: pointer; background: var(--surface-2); }
-    .user:hover, .user.active { border-color: var(--primary); }
+    .user:hover, .user.active { border-color: var(--primary); background: var(--surface-3); }
     .user strong { display: block; margin-bottom: 5px; }
+    .user-stats { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 9px; }
+    .search-block { display: grid; grid-template-columns: 1fr auto; gap: 8px; margin: 12px 0; }
     .muted { color: var(--muted); font-size: 13px; }
-    .hidden { display: none; }
+    .hint { display: block; color: var(--muted); font-size: 12px; margin-top: 5px; min-height: 15px; }
+    .hidden { display: none !important; }
     .empty { min-height: 280px; display: grid; place-content: center; text-align: center; }
-    .pill { border: 1px solid var(--border); border-radius: 999px; padding: 5px 9px; color: var(--muted); font-size: 12px; }
+    .pill { border: 1px solid var(--border); border-radius: 999px; padding: 5px 9px; color: var(--muted); font-size: 12px; background: var(--surface-2); }
+    .pill.good { color: var(--success); border-color: rgba(21, 128, 61, 0.25); }
+    .pill.warn { color: var(--warning); border-color: rgba(180, 83, 9, 0.28); }
     .rig-card { border: 1px solid var(--border); border-radius: 8px; padding: 12px; background: var(--surface-2); margin-top: 12px; }
-    .inventory-row, .boost-row { display: grid; grid-template-columns: 1fr 110px 42px; gap: 8px; margin-bottom: 8px; align-items: center; }
+    .row-list { display: grid; gap: 8px; }
+    .inventory-row, .boost-row { display: grid; grid-template-columns: 1fr 120px 42px; gap: 8px; align-items: center; border: 1px solid var(--border); border-radius: 8px; padding: 10px; background: var(--surface-2); }
     .boost-row { grid-template-columns: 1fr 190px 42px; }
     .pet-row { border: 1px solid var(--border); border-radius: 8px; padding: 12px; background: var(--surface-2); margin-bottom: 10px; }
     .pet-row-head { display: flex; justify-content: space-between; gap: 12px; align-items: center; margin-bottom: 10px; }
     .pet-json { min-height: 76px; }
+    .defense-list { display: flex; flex-wrap: wrap; gap: 8px; }
+    .section-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(320px, 0.65fr); gap: 16px; align-items: start; }
+    .wide { grid-column: 1 / -1; }
     #login { max-width: 430px; margin: 80px auto; }
     #status { min-height: 18px; }
+    @media (max-width: 1100px) {
+      .section-grid { grid-template-columns: 1fr; }
+      .summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
     @media (max-width: 900px) {
       main { grid-template-columns: 1fr; }
       aside { border-right: 0; border-bottom: 1px solid var(--border); }
+      .editor-top { grid-template-columns: 1fr; }
       .grid-3, .grid-2 { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 560px) {
+      header, .toolbar, .bar, .editor-actions { align-items: stretch; flex-direction: column; }
+      .search-block, .inventory-row, .boost-row { grid-template-columns: 1fr; }
+      .summary-grid { grid-template-columns: 1fr; }
     }
   </style>
 </head>
@@ -409,11 +445,14 @@ function pageHtml() {
     </header>
     <main>
       <aside>
-        <div class="bar">
+        <div class="panel-kicker">Players</div>
+        <h2>User Lookup</h2>
+        <p class="muted">Search by Discord user ID, then edit their economy profile.</p>
+        <div class="search-block">
           <input id="search" placeholder="Search user ID" oninput="renderUsers()">
           <button onclick="newUser()">New</button>
         </div>
-        <p id="userCount" class="muted"></p>
+        <p id="userCount" class="pill"></p>
         <div id="users"></div>
       </aside>
       <section>
@@ -425,106 +464,135 @@ function pageHtml() {
         </div>
 
         <form id="editor" class="hidden" onsubmit="saveUser(event)">
-          <div class="panel">
-            <div class="panel-head">
-              <div>
-                <h2>User</h2>
-                <p class="muted">Discord ID and primary economy values.</p>
-              </div>
-              <div class="bar">
-                <button type="submit">Save</button>
-                <button type="button" class="danger" onclick="deleteUser()">Delete</button>
+          <div class="panel editor-top">
+            <div>
+              <div class="panel-kicker">Selected Player</div>
+              <h1 id="editorTitle">User</h1>
+              <p id="editorSubtitle" class="muted">Discord ID and live economy totals.</p>
+              <div class="summary-grid">
+                <div class="stat-card"><span>Net Worth</span><strong id="summaryNet">$0</strong></div>
+                <div class="stat-card"><span>Wallet</span><strong id="summaryWallet">$0</strong></div>
+                <div class="stat-card"><span>Bank</span><strong id="summaryBank">$0</strong></div>
+                <div class="stat-card"><span>Inventory</span><strong id="summaryInventory">0 items</strong></div>
               </div>
             </div>
-            <div class="grid-2">
-              <div><label>Discord User ID</label><input id="userId" placeholder="123456789012345678"></div>
+            <div class="editor-actions">
+              <span id="status" class="pill"></span>
+              <button type="submit">Save Changes</button>
+              <button type="button" class="danger" onclick="deleteUser()">Delete User</button>
             </div>
+          </div>
+
+          <div class="section-grid">
+            <div class="panel">
+              <div class="panel-head">
+                <div>
+                  <div class="panel-kicker">Money</div>
+                  <h2>Account Basics</h2>
+                  <p class="muted">Core balances, level, and XP for this player.</p>
+                </div>
+              </div>
+              <div class="grid-2">
+                <div><label>Discord User ID</label><input id="userId" placeholder="123456789012345678"></div>
+                <div><label>Experience</label><input id="experience" type="number" min="0"><span id="experienceHint" class="hint"></span></div>
+              </div>
               <div class="grid-3">
-               <div><label>Wallet</label><input id="wallet" type="number" min="0"></div>
-               <div><label>Bank</label><input id="bank" type="number" min="0"></div>
-               <div><label>Bank Level</label><input id="bankLevel" type="number" min="1" max="10"></div>
-             </div>
-             <div class="grid-3">
-                <div><label>Experience</label><input id="experience" type="number" min="0"></div>
+                <div><label>Wallet Cash</label><input id="wallet" type="number" min="0"><span id="walletHint" class="hint"></span></div>
+                <div><label>Bank Cash</label><input id="bank" type="number" min="0"><span id="bankHint" class="hint"></span></div>
+                <div><label>Bank Level</label><input id="bankLevel" type="number" min="1" max="10"><span id="bankLevelHint" class="hint"></span></div>
               </div>
             </div>
 
-          <div class="panel">
-            <div class="panel-head">
-              <div>
-                <h2>Game Rigging</h2>
-                <p class="muted">Set the user's next game outcome.</p>
+            <div class="panel">
+              <div class="panel-head">
+                <div>
+                  <div class="panel-kicker">Bank</div>
+                  <h2>Installed Defenses</h2>
+                  <p class="muted">Readonly here. Players manage these through the bank menu.</p>
+                </div>
               </div>
-              <button type="button" class="secondary" onclick="clearRig()">Clear Rig</button>
+              <div id="bankDefenses" class="defense-list"></div>
             </div>
-            <div class="grid-2">
-              <div><label>Game</label><select id="rigGame"></select></div>
-              <div><label>Outcome</label><select id="rigOutcome"></select></div>
-            </div>
-            <div class="grid-2">
-              <div><label>Highlow Next Roll</label><input id="rigHighlowRoll" type="number" min="0" max="100" placeholder="blank = random"></div>
-            </div>
-            <label><input id="rigEnabled" type="checkbox" style="width:auto;margin-right:8px"> Rig this user's next matching game</label>
-            <div id="rigPreview" class="rig-card muted">No rig active.</div>
-          </div>
 
-          <div class="panel">
-            <div class="panel-head">
-              <div>
-                <h2>Inventory</h2>
-                <p class="muted">Pick items by friendly name; IDs are shown in the list.</p>
+            <div class="panel">
+              <div class="panel-head">
+                <div>
+                  <div class="panel-kicker">Items</div>
+                  <h2>Inventory</h2>
+                  <p class="muted">Add, remove, or adjust item quantities by friendly name.</p>
+                </div>
+                <button type="button" onclick="openItemModal()">Add Item</button>
               </div>
-              <button type="button" onclick="openItemModal()">Add Item</button>
+              <div id="inventory" class="row-list"></div>
             </div>
-            <div id="inventory"></div>
-          </div>
 
-          <div class="panel">
-            <div class="panel-head">
-              <div>
-                <h2>Pets</h2>
-                <p class="muted">Edit owned pets, equipped pet, XP, food time, and stash.</p>
+            <div class="panel">
+              <div class="panel-head">
+                <div>
+                  <div class="panel-kicker">Pets</div>
+                  <h2>Pet Profile</h2>
+                  <p class="muted">Equip pets, tune XP, feeding time, idle hunt time, and stash.</p>
+                </div>
+                <button type="button" onclick="openPetModal()">Add Pet</button>
               </div>
-              <button type="button" onclick="openPetModal()">Add Pet</button>
+              <div class="grid-2">
+                <div><label>Equipped Pet</label><select id="equippedPet"></select></div>
+              </div>
+              <div id="pets"></div>
             </div>
-            <div class="grid-2">
-              <div><label>Equipped Pet</label><select id="equippedPet"></select></div>
-            </div>
-            <div id="pets"></div>
-          </div>
 
-          <div class="panel">
-            <div class="panel-head">
-              <div>
-                <h2>Boosts</h2>
-                <p class="muted">Add timed boosts without editing JSON.</p>
+            <div class="panel">
+              <div class="panel-head">
+                <div>
+                  <div class="panel-kicker">Boosts</div>
+                  <h2>Timed Effects</h2>
+                  <p class="muted">Add or remove active boosts without touching raw user files.</p>
+                </div>
+                <button type="button" onclick="openBoostModal()">Add Boost</button>
               </div>
-              <button type="button" onclick="openBoostModal()">Add Boost</button>
+              <div id="boosts" class="row-list"></div>
             </div>
-            <div id="boosts"></div>
-          </div>
 
-          <div class="panel">
-            <div class="panel-head">
-              <div>
-                <h2>Cooldowns</h2>
-                <p class="muted">Unix millisecond timestamps used by commands.</p>
+            <div class="panel">
+              <div class="panel-head">
+                <div>
+                  <div class="panel-kicker">Rigging</div>
+                  <h2>Next Game Outcome</h2>
+                  <p class="muted">Set one controlled outcome for testing or admin correction.</p>
+                </div>
+                <button type="button" class="secondary" onclick="clearRig()">Clear Rig</button>
               </div>
+              <div class="grid-2">
+                <div><label>Game</label><select id="rigGame"></select></div>
+                <div><label>Outcome</label><select id="rigOutcome"></select></div>
+              </div>
+              <div class="grid-2">
+                <div><label>Highlow Next Roll</label><input id="rigHighlowRoll" type="number" min="0" max="100" placeholder="blank = random"></div>
+              </div>
+              <label><input id="rigEnabled" type="checkbox" style="width:auto;margin-right:8px"> Enable this rig for the user's next matching game</label>
+              <div id="rigPreview" class="rig-card muted">No rig active.</div>
             </div>
-            <div class="grid-3">
-              <div><label>Last Beg</label><input id="lastBeg" type="number" min="0"></div>
-              <div><label>Last Work</label><input id="lastWork" type="number" min="0"></div>
-              <div><label>Last Daily</label><input id="lastDaily" type="number" min="0"></div>
-            </div>
-            <div class="grid-3">
-              <div><label>Last Rob</label><input id="lastRob" type="number" min="0"></div>
-              <div><label>Last Bankrob</label><input id="lastBankrob" type="number" min="0"></div>
-              <div><label>Last Hunt</label><input id="lastHunt" type="number" min="0"></div>
-            </div>
-            <div class="grid-3">
-              <div><label>Last Give</label><input id="lastGive" type="number" min="0"></div>
-              <div><label>Last Mine</label><input id="lastMine" type="number" min="0"></div>
-              <div><label>Status</label><div id="status" class="pill"></div></div>
+
+            <div class="panel wide">
+              <div>
+                <div class="panel-kicker">Cooldowns</div>
+                <h2>Cooldown Timestamps</h2>
+                <p class="muted">Unix millisecond timestamps used by commands. Set to 0 to clear a cooldown.</p>
+              </div>
+              <div class="grid-3">
+                <div><label>Beg</label><input id="lastBeg" type="number" min="0"><span id="lastBegHint" class="hint"></span></div>
+                <div><label>Work</label><input id="lastWork" type="number" min="0"><span id="lastWorkHint" class="hint"></span></div>
+                <div><label>Daily</label><input id="lastDaily" type="number" min="0"><span id="lastDailyHint" class="hint"></span></div>
+              </div>
+              <div class="grid-3">
+                <div><label>Rob</label><input id="lastRob" type="number" min="0"><span id="lastRobHint" class="hint"></span></div>
+                <div><label>Bank Rob</label><input id="lastBankrob" type="number" min="0"><span id="lastBankrobHint" class="hint"></span></div>
+                <div><label>Hunt</label><input id="lastHunt" type="number" min="0"><span id="lastHuntHint" class="hint"></span></div>
+              </div>
+              <div class="grid-3">
+                <div><label>Give</label><input id="lastGive" type="number" min="0"><span id="lastGiveHint" class="hint"></span></div>
+                <div><label>Mine</label><input id="lastMine" type="number" min="0"><span id="lastMineHint" class="hint"></span></div>
+              </div>
             </div>
           </div>
         </form>
@@ -578,6 +646,20 @@ let rigGames = [];
 let rigOutcomes = [];
 let selected = null;
 let activeBankDefenses = {};
+
+function formatNumber(value) {
+  return Math.max(0, Math.floor(Number(value) || 0)).toLocaleString();
+}
+
+function formatMoney(value) {
+  return "$" + formatNumber(value);
+}
+
+function formatTimestamp(value) {
+  const time = Number(value) || 0;
+  if (time <= 0) return "Not set";
+  return new Date(time).toLocaleString();
+}
 
 function applyTheme() {
   document.body.classList.toggle("dark", localStorage.adminTheme === "dark");
@@ -662,12 +744,23 @@ function renderUsers() {
   const q = document.getElementById("search").value.trim();
   const root = document.getElementById("users");
   const filtered = users.filter((user) => user.userId.includes(q));
-  document.getElementById("userCount").textContent = filtered.length + " user(s)";
+  document.getElementById("userCount").textContent = filtered.length + " user" + (filtered.length === 1 ? "" : "s") + " shown";
   root.innerHTML = "";
+  if (filtered.length === 0) {
+    root.innerHTML = "<div class='panel empty'><div><h3>No users found</h3><p class='muted'>Try another ID or create a new user.</p></div></div>";
+    return;
+  }
   filtered.forEach((user) => {
     const el = document.createElement("div");
     el.className = "user" + (selected === user.userId ? " active" : "");
-    el.innerHTML = "<strong>" + user.userId + "</strong><div class='muted'>Net " + (user.wallet + user.bank).toLocaleString() + " | XP " + user.experience.toLocaleString() + " | Items " + user.items.toLocaleString() + " | Boosts " + user.boosts.toLocaleString() + "</div>";
+    el.innerHTML =
+      "<strong>" + user.userId + "</strong>" +
+      "<div class='muted'>Net worth " + formatMoney(user.wallet + user.bank) + "</div>" +
+      "<div class='user-stats'>" +
+        "<span class='pill'>XP " + formatNumber(user.experience) + "</span>" +
+        "<span class='pill'>Items " + formatNumber(user.items) + "</span>" +
+        "<span class='pill'>Boosts " + formatNumber(user.boosts) + "</span>" +
+      "</div>";
     el.onclick = () => loadUser(user.userId);
     root.appendChild(el);
   });
@@ -687,11 +780,52 @@ function showEditor(userId, user) {
   numberFields.forEach((field) => document.getElementById(field).value = user[field] || 0);
   document.getElementById("bankLevel").value = user.bankLevel || 1;
   activeBankDefenses = user.bankDefenses || {};
+  document.getElementById("editorTitle").textContent = userId ? "User " + userId : "New User";
+  document.getElementById("editorSubtitle").textContent = userId ? "Editing live stored data for this Discord account." : "Create a new stored economy profile.";
+  renderBankDefenses();
   renderRig(user.rig || null);
   renderInventory(user.inventory || {});
   renderPets(user.pets || {}, user.equippedPet || null);
   renderBoosts(user.boosts || {});
+  updateHumanReadableHints();
   status("");
+}
+
+function updateHumanReadableHints() {
+  const wallet = Number(document.getElementById("wallet").value) || 0;
+  const bank = Number(document.getElementById("bank").value) || 0;
+  const inventoryCount = [...document.querySelectorAll(".inventory-row")].reduce((sum, row) =>
+    sum + (Number(row.querySelector(".item-quantity").value) || 0), 0);
+
+  document.getElementById("summaryNet").textContent = formatMoney(wallet + bank);
+  document.getElementById("summaryWallet").textContent = formatMoney(wallet);
+  document.getElementById("summaryBank").textContent = formatMoney(bank);
+  document.getElementById("summaryInventory").textContent = formatNumber(inventoryCount) + " item" + (inventoryCount === 1 ? "" : "s");
+
+  document.getElementById("walletHint").textContent = formatMoney(wallet);
+  document.getElementById("bankHint").textContent = formatMoney(bank);
+  document.getElementById("experienceHint").textContent = formatNumber(document.getElementById("experience").value) + " XP";
+  document.getElementById("bankLevelHint").textContent = "Level " + Math.min(10, Math.max(1, Number(document.getElementById("bankLevel").value) || 1)) + " of 10";
+
+  ["lastBeg","lastWork","lastDaily","lastRob","lastBankrob","lastHunt","lastGive","lastMine"].forEach((field) => {
+    document.getElementById(field + "Hint").textContent = formatTimestamp(document.getElementById(field).value);
+  });
+}
+
+function renderBankDefenses() {
+  const root = document.getElementById("bankDefenses");
+  const defenses = Object.entries(activeBankDefenses || {}).filter(([, quantity]) => Number(quantity) > 0);
+  root.innerHTML = "";
+  if (defenses.length === 0) {
+    root.innerHTML = "<span class='pill'>No defenses installed</span>";
+    return;
+  }
+  defenses.forEach(([itemId, quantity]) => {
+    const el = document.createElement("span");
+    el.className = "pill good";
+    el.textContent = itemName(itemId) + " x" + formatNumber(quantity);
+    root.appendChild(el);
+  });
 }
 
 function renderRig(rig) {
@@ -735,17 +869,31 @@ function petName(petId) {
 function renderInventory(inventory) {
   const root = document.getElementById("inventory");
   root.innerHTML = "";
-  Object.entries(inventory).sort(([a], [b]) => a.localeCompare(b)).forEach(([itemId, quantity]) => addItemRow(itemId, quantity));
+  const entries = Object.entries(inventory).sort(([a], [b]) => a.localeCompare(b));
+  if (entries.length === 0) {
+    root.innerHTML = "<div class='pill'>No items in inventory</div>";
+    updateHumanReadableHints();
+    return;
+  }
+  entries.forEach(([itemId, quantity]) => addItemRow(itemId, quantity));
+  updateHumanReadableHints();
 }
 
 function addItemRow(itemId, quantity) {
   const root = document.getElementById("inventory");
+  root.querySelector(".pill")?.remove();
   const row = document.createElement("div");
   row.className = "inventory-row";
   row.dataset.itemId = itemId;
   row.innerHTML = "<div><strong>" + itemName(itemId) + "</strong><div class='muted'>" + itemId + "</div></div><input class='item-quantity' type='number' min='0' value='" + quantity + "'><button type='button' class='danger'>x</button>";
-  row.querySelector("button").onclick = () => row.remove();
+  row.querySelector(".item-quantity").oninput = updateHumanReadableHints;
+  row.querySelector("button").onclick = () => {
+    row.remove();
+    if (!document.querySelector(".inventory-row")) renderInventory({});
+    updateHumanReadableHints();
+  };
   root.appendChild(row);
+  updateHumanReadableHints();
 }
 
 function renderEquippedPetOptions(equippedPet) {
@@ -760,12 +908,15 @@ function renderEquippedPetOptions(equippedPet) {
 function renderPets(activePets, equippedPet) {
   const root = document.getElementById("pets");
   root.innerHTML = "";
-  Object.entries(activePets).sort(([a], [b]) => a.localeCompare(b)).forEach(([petId, pet]) => addPetRow(petId, pet, false));
+  const entries = Object.entries(activePets).sort(([a], [b]) => a.localeCompare(b));
+  if (entries.length === 0) root.innerHTML = "<div class='pill'>No pets owned</div>";
+  entries.forEach(([petId, pet]) => addPetRow(petId, pet, false));
   renderEquippedPetOptions(equippedPet);
 }
 
 function addPetRow(petId, pet = {}, refreshEquipped = true) {
   const root = document.getElementById("pets");
+  root.querySelector(".pill")?.remove();
   const existing = [...document.querySelectorAll(".pet-row")].find((row) => row.dataset.petId === petId);
   if (existing) existing.remove();
 
@@ -791,6 +942,7 @@ function addPetRow(petId, pet = {}, refreshEquipped = true) {
   row.querySelector(".pet-boosts").value = JSON.stringify(pet.boosts || {}, null, 2);
   row.querySelector("button").onclick = () => {
     row.remove();
+    if (!document.querySelector(".pet-row")) root.innerHTML = "<div class='pill'>No pets owned</div>";
     renderEquippedPetOptions(document.getElementById("equippedPet").value);
   };
   root.appendChild(row);
@@ -800,17 +952,26 @@ function addPetRow(petId, pet = {}, refreshEquipped = true) {
 function renderBoosts(activeBoosts) {
   const root = document.getElementById("boosts");
   root.innerHTML = "";
-  Object.entries(activeBoosts).sort(([a], [b]) => a.localeCompare(b)).forEach(([boostId, expiresAt]) => addBoostRow(boostId, expiresAt));
+  const entries = Object.entries(activeBoosts).sort(([a], [b]) => a.localeCompare(b));
+  if (entries.length === 0) {
+    root.innerHTML = "<div class='pill'>No active boosts</div>";
+    return;
+  }
+  entries.forEach(([boostId, expiresAt]) => addBoostRow(boostId, expiresAt));
 }
 
 function addBoostRow(boostId, expiresAt) {
   const root = document.getElementById("boosts");
+  root.querySelector(".pill")?.remove();
   const row = document.createElement("div");
   row.className = "boost-row";
   row.dataset.boostId = boostId;
   row.innerHTML = "<div><strong>" + boostName(boostId) + "</strong><div class='muted'>" + boostId + "</div></div><input class='boost-expires' type='datetime-local'><button type='button' class='danger'>x</button>";
   row.querySelector(".boost-expires").value = toDateTimeLocal(expiresAt);
-  row.querySelector("button").onclick = () => row.remove();
+  row.querySelector("button").onclick = () => {
+    row.remove();
+    if (!document.querySelector(".boost-row")) renderBoosts({});
+  };
   root.appendChild(row);
 }
 
@@ -827,6 +988,7 @@ function addItemFromModal(event) {
   if (existing) {
     const input = existing.querySelector(".item-quantity");
     input.value = (Number(input.value) || 0) + quantity;
+    updateHumanReadableHints();
   } else {
     addItemRow(itemId, quantity);
   }
@@ -960,8 +1122,8 @@ async function saveUser(event) {
   const payload = exists ? { user: collectUser() } : { userId, user: collectUser() };
   const result = await api(path, { method, body: JSON.stringify(payload) });
   selected = result.userId;
-  status("Saved " + result.userId);
   await loadUsers();
+  status("Saved " + result.userId);
 }
 
 async function deleteUser() {
@@ -981,13 +1143,19 @@ function newUser() {
 }
 
 function status(text) {
-  document.getElementById("status").textContent = text;
+  const el = document.getElementById("status");
+  el.textContent = text || "Unsaved changes show here";
+  el.classList.toggle("good", Boolean(text));
 }
 
 applyTheme();
 boot().catch((error) => alert(error.message));
 document.addEventListener("change", (event) => {
   if (["rigEnabled", "rigGame", "rigOutcome", "rigHighlowRoll"].includes(event.target.id)) updateRigPreview();
+  if (numberFields.includes(event.target.id)) updateHumanReadableHints();
+});
+document.addEventListener("input", (event) => {
+  if (numberFields.includes(event.target.id) || event.target.classList.contains("item-quantity")) updateHumanReadableHints();
 });
 </script>
 </body>
