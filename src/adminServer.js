@@ -79,6 +79,68 @@ const itemCatalog = [
   ["void", "Void"]
 ];
 
+const itemCategoryMap = {
+  xp_potion: "Boosts",
+  cash_potion: "Boosts",
+  lucky_charm: "Boosts",
+  dirt: "Common",
+  broken_phone: "Common",
+  rubber_duck: "Common",
+  gold_ring: "Common",
+  mystery_block: "Common",
+  fake_id: "Crime",
+  shiny_rock: "Common",
+  wooden_pickaxe: "Mine",
+  stone_pickaxe: "Mine",
+  iron_pickaxe: "Mine",
+  gold_pickaxe: "Mine",
+  diamond_pickaxe: "Mine",
+  netherite_pickaxe: "Mine",
+  cobblestone: "Mine",
+  coal: "Mine",
+  iron: "Mine",
+  raw_gold: "Mine",
+  redstone: "Mine",
+  diamond: "Mine",
+  emerald: "Mine",
+  end_stone: "Mine",
+  netherite_ingot: "Mine",
+  ruby: "Mine",
+  pebble: "Common",
+  fries: "Food",
+  burger: "Food",
+  watermelon: "Food",
+  toco: "Food",
+  orange: "Food",
+  meat: "Food",
+  beans: "Food",
+  croissant: "Food",
+  crunch: "Food",
+  crown: "Rare",
+  cd: "Common",
+  boots: "Common",
+  basicdog: "Pets",
+  cat: "Pets",
+  funnydog: "Pets",
+  geckodragon: "Pets",
+  lizard: "Pets",
+  rufus: "Pets",
+  smirkcat: "Pets",
+  alarm: "Bank",
+  laser_grid: "Bank",
+  land_mine: "Bank",
+  guard: "Bank",
+  hackdevice: "Crime",
+  void: "Crime"
+};
+
+const bankDefenseCatalog = [
+  ["alarm", "Alarm"],
+  ["laser_grid", "Laser Grid"],
+  ["land_mine", "Land Mine"],
+  ["guard", "Guard"]
+];
+
 const boostCatalog = [
   ["lucky_charm", "Lucky Charm"]
 ];
@@ -106,6 +168,29 @@ const rigOutcomes = [
   ["lose", "Lose"],
   ["blackjack", "Blackjack"]
 ];
+
+const discordUserCache = new Map();
+
+async function resolveDiscordUserName(userId) {
+  if (!config.token || typeof fetch !== "function" || !/^\d{10,25}$/.test(userId)) return null;
+
+  const cached = discordUserCache.get(userId);
+  if (cached && cached.expiresAt > Date.now()) return cached.name;
+
+  try {
+    const res = await fetch(`https://discord.com/api/v10/users/${userId}`, {
+      headers: { authorization: `Bot ${config.token}` }
+    });
+    if (!res.ok) return null;
+
+    const user = await res.json();
+    const name = user.global_name || user.username || null;
+    discordUserCache.set(userId, { name, expiresAt: Date.now() + 60 * 60 * 1000 });
+    return name;
+  } catch {
+    return null;
+  }
+}
 
 function send(res, status, body, type = "application/json") {
   res.writeHead(status, {
@@ -220,17 +305,6 @@ function cleanUser(input) {
   return user;
 }
 
-function userSummary(userId, user) {
-  return {
-    userId,
-    wallet: user.wallet || 0,
-    bank: user.bank || 0,
-    experience: user.experience || 0,
-    items: Object.values(user.inventory || {}).reduce((sum, quantity) => sum + quantity, 0),
-    boosts: Object.keys(user.boosts || {}).length
-  };
-}
-
 async function handleApi(req, res, pathname) {
   if (!isAuthorized(req)) {
     send(res, 401, { error: "Unauthorized" });
@@ -239,7 +313,8 @@ async function handleApi(req, res, pathname) {
 
   if (req.method === "GET" && pathname === "/api/meta") {
     send(res, 200, {
-      items: itemCatalog.map(([id, name]) => ({ id, name })),
+      items: itemCatalog.map(([id, name]) => ({ id, name, category: itemCategoryMap[id] || "Other" })),
+      bankDefenses: bankDefenseCatalog.map(([id, name]) => ({ id, name, category: "Bank" })),
       pets: petCatalog.map(([id, name]) => ({ id, name })),
       boosts: boostCatalog.map(([id, name]) => ({ id, name })),
       rigGames: rigGames.map(([id, name]) => ({ id, name })),
@@ -254,11 +329,22 @@ async function handleApi(req, res, pathname) {
   }
 
   if (req.method === "GET" && pathname === "/api/users") {
-    const users = await withStore((store) =>
+    const summaries = await withStore((store) =>
       Object.entries(store.users)
-        .map(([userId, user]) => userSummary(userId, user))
-        .sort((a, b) => b.wallet + b.bank - (a.wallet + a.bank))
+        .map(([userId, user]) => ({
+          userId,
+          wallet: user.wallet || 0,
+          bank: user.bank || 0,
+          experience: user.experience || 0,
+          items: Object.values(user.inventory || {}).reduce((sum, quantity) => sum + quantity, 0),
+          boosts: Object.keys(user.boosts || {}).length
+        }))
     );
+    const users = await Promise.all(summaries.map(async (user) => ({
+      ...user,
+      displayName: await resolveDiscordUserName(user.userId)
+    })));
+    users.sort((a, b) => b.wallet + b.bank - (a.wallet + a.bank));
     send(res, 200, { users });
     return;
   }
@@ -268,7 +354,7 @@ async function handleApi(req, res, pathname) {
   if (userMatch && req.method === "GET") {
     const userId = userMatch[1];
     const user = await withStore((store) => getUser(store, userId));
-    send(res, 200, { userId, user });
+    send(res, 200, { userId, displayName: await resolveDiscordUserName(userId), user });
     return;
   }
 
@@ -399,12 +485,16 @@ function pageHtml() {
     .pill.warn { color: var(--warning); border-color: rgba(180, 83, 9, 0.28); }
     .rig-card { border: 1px solid var(--border); border-radius: 8px; padding: 12px; background: var(--surface-2); margin-top: 12px; }
     .row-list { display: grid; gap: 8px; }
-    .inventory-row, .boost-row { display: grid; grid-template-columns: 1fr 120px 42px; gap: 8px; align-items: center; border: 1px solid var(--border); border-radius: 8px; padding: 10px; background: var(--surface-2); }
+    .inventory-row, .boost-row, .defense-row, .stash-row { display: grid; grid-template-columns: 1fr 120px 42px; gap: 8px; align-items: center; border: 1px solid var(--border); border-radius: 8px; padding: 10px; background: var(--surface-2); }
     .boost-row { grid-template-columns: 1fr 190px 42px; }
+    .defense-row { grid-template-columns: 1fr 100px 42px; }
+    .stash-row { grid-template-columns: 1fr 100px 42px; padding: 8px; }
     .pet-row { border: 1px solid var(--border); border-radius: 8px; padding: 12px; background: var(--surface-2); margin-bottom: 10px; }
     .pet-row-head { display: flex; justify-content: space-between; gap: 12px; align-items: center; margin-bottom: 10px; }
-    .pet-json { min-height: 76px; }
+    .pet-advanced { margin-top: 10px; }
+    .pet-json { min-height: 76px; margin-top: 8px; }
     .defense-list { display: flex; flex-wrap: wrap; gap: 8px; }
+    .stack { display: grid; gap: 8px; }
     .section-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(320px, 0.65fr); gap: 16px; align-items: start; }
     .wide { grid-column: 1 / -1; }
     #login { max-width: 430px; margin: 80px auto; }
@@ -421,7 +511,7 @@ function pageHtml() {
     }
     @media (max-width: 560px) {
       header, .toolbar, .bar, .editor-actions { align-items: stretch; flex-direction: column; }
-      .search-block, .inventory-row, .boost-row { grid-template-columns: 1fr; }
+      .search-block, .inventory-row, .boost-row, .defense-row, .stash-row { grid-template-columns: 1fr; }
       .summary-grid { grid-template-columns: 1fr; }
     }
   </style>
@@ -439,7 +529,7 @@ function pageHtml() {
       <div class="brand"><h2>CahMoney Admin</h2><span>Economy data editor</span></div>
       <div class="toolbar">
         <button class="secondary" onclick="toggleTheme()">Theme</button>
-        <button class="secondary" onclick="loadUsers()">Refresh</button>
+        <button class="secondary" onclick="refreshSelectedUser()">Refresh Selected</button>
         <button class="secondary" onclick="logout()">Logout</button>
       </div>
     </header>
@@ -508,10 +598,11 @@ function pageHtml() {
                 <div>
                   <div class="panel-kicker">Bank</div>
                   <h2>Installed Defenses</h2>
-                  <p class="muted">Readonly here. Players manage these through the bank menu.</p>
+                  <p class="muted">Add, remove, or adjust installed bank defenses.</p>
                 </div>
+                <button type="button" onclick="addDefenseRow('alarm', 1)">Add Defense</button>
               </div>
-              <div id="bankDefenses" class="defense-list"></div>
+              <div id="bankDefenses" class="row-list"></div>
             </div>
 
             <div class="panel">
@@ -577,21 +668,21 @@ function pageHtml() {
               <div>
                 <div class="panel-kicker">Cooldowns</div>
                 <h2>Cooldown Timestamps</h2>
-                <p class="muted">Unix millisecond timestamps used by commands. Set to 0 to clear a cooldown.</p>
+                <p class="muted">Edit cooldowns as normal dates. Clear a field to remove that cooldown.</p>
               </div>
               <div class="grid-3">
-                <div><label>Beg</label><input id="lastBeg" type="number" min="0"><span id="lastBegHint" class="hint"></span></div>
-                <div><label>Work</label><input id="lastWork" type="number" min="0"><span id="lastWorkHint" class="hint"></span></div>
-                <div><label>Daily</label><input id="lastDaily" type="number" min="0"><span id="lastDailyHint" class="hint"></span></div>
+                <div><label>Beg</label><input id="lastBeg" type="datetime-local"><span id="lastBegHint" class="hint"></span></div>
+                <div><label>Work</label><input id="lastWork" type="datetime-local"><span id="lastWorkHint" class="hint"></span></div>
+                <div><label>Daily</label><input id="lastDaily" type="datetime-local"><span id="lastDailyHint" class="hint"></span></div>
               </div>
               <div class="grid-3">
-                <div><label>Rob</label><input id="lastRob" type="number" min="0"><span id="lastRobHint" class="hint"></span></div>
-                <div><label>Bank Rob</label><input id="lastBankrob" type="number" min="0"><span id="lastBankrobHint" class="hint"></span></div>
-                <div><label>Hunt</label><input id="lastHunt" type="number" min="0"><span id="lastHuntHint" class="hint"></span></div>
+                <div><label>Rob</label><input id="lastRob" type="datetime-local"><span id="lastRobHint" class="hint"></span></div>
+                <div><label>Bank Rob</label><input id="lastBankrob" type="datetime-local"><span id="lastBankrobHint" class="hint"></span></div>
+                <div><label>Hunt</label><input id="lastHunt" type="datetime-local"><span id="lastHuntHint" class="hint"></span></div>
               </div>
               <div class="grid-3">
-                <div><label>Give</label><input id="lastGive" type="number" min="0"><span id="lastGiveHint" class="hint"></span></div>
-                <div><label>Mine</label><input id="lastMine" type="number" min="0"><span id="lastMineHint" class="hint"></span></div>
+                <div><label>Give</label><input id="lastGive" type="datetime-local"><span id="lastGiveHint" class="hint"></span></div>
+                <div><label>Mine</label><input id="lastMine" type="datetime-local"><span id="lastMineHint" class="hint"></span></div>
               </div>
             </div>
           </div>
@@ -605,6 +696,7 @@ function pageHtml() {
       <h3>Add Item</h3>
       <p class="muted">Choose an item by name.</p>
       <div class="grid-2">
+        <div><label>Category</label><select id="itemCategory" onchange="filterItemSelect()"></select></div>
         <div><label>Item</label><select id="itemToAdd"></select></div>
         <div><label>Quantity</label><input id="itemQuantity" type="number" min="1" value="1"></div>
       </div>
@@ -637,9 +729,11 @@ function pageHtml() {
   </dialog>
 
 <script>
-const numberFields = ["wallet","bank","bankLevel","experience","lastBeg","lastWork","lastDaily","lastRob","lastBankrob","lastHunt","lastGive","lastMine"];
+const numberFields = ["wallet","bank","bankLevel","experience"];
+const cooldownFields = ["lastBeg","lastWork","lastDaily","lastRob","lastBankrob","lastHunt","lastGive","lastMine"];
 let users = [];
 let items = [];
+let bankDefenseItems = [];
 let pets = [];
 let boosts = [];
 let rigGames = [];
@@ -656,9 +750,13 @@ function formatMoney(value) {
 }
 
 function formatTimestamp(value) {
-  const time = Number(value) || 0;
+  const time = typeof value === "string" && value.includes("T") ? new Date(value).getTime() : Number(value) || 0;
   if (time <= 0) return "Not set";
   return new Date(time).toLocaleString();
+}
+
+function displayUser(user) {
+  return user.displayName ? user.displayName + " (" + user.userId + ")" : user.userId;
 }
 
 function applyTheme() {
@@ -706,11 +804,13 @@ async function boot() {
   document.getElementById("app").classList.remove("hidden");
   const meta = await api("/api/meta");
   items = meta.items;
+  bankDefenseItems = meta.bankDefenses;
   pets = meta.pets;
   boosts = meta.boosts;
   rigGames = meta.rigGames;
   rigOutcomes = meta.rigOutcomes;
-  fillSelect("itemToAdd", items);
+  fillCategorySelect();
+  filterItemSelect();
   fillSelect("petToAdd", pets);
   fillSelect("boostToAdd", boosts);
   fillSelect("rigGame", rigGames);
@@ -719,9 +819,26 @@ async function boot() {
 }
 
 function fillSelect(id, rows) {
-  document.getElementById(id).innerHTML = rows.map((row) =>
+  fillSelectElement(document.getElementById(id), rows);
+}
+
+function fillSelectElement(select, rows) {
+  select.innerHTML = rows.map((row) =>
     "<option value='" + row.id + "'>" + row.name + " (" + row.id + ")</option>"
   ).join("");
+}
+
+function fillCategorySelect() {
+  const categories = ["All", ...new Set(items.map((item) => item.category || "Other"))].sort((a, b) => a === "All" ? -1 : b === "All" ? 1 : a.localeCompare(b));
+  document.getElementById("itemCategory").innerHTML = categories.map((category) =>
+    "<option value='" + category + "'>" + category + "</option>"
+  ).join("");
+}
+
+function filterItemSelect() {
+  const category = document.getElementById("itemCategory").value || "All";
+  const rows = category === "All" ? items : items.filter((item) => item.category === category);
+  fillSelect("itemToAdd", rows);
 }
 
 async function loadUsers() {
@@ -737,7 +854,7 @@ async function loadUsers() {
   }
 
   const data = await api("/api/users/" + selected);
-  showEditor(data.userId, data.user);
+  showEditor(data.userId, { ...data.user, displayName: data.displayName });
 }
 
 function renderUsers() {
@@ -754,7 +871,7 @@ function renderUsers() {
     const el = document.createElement("div");
     el.className = "user" + (selected === user.userId ? " active" : "");
     el.innerHTML =
-      "<strong>" + user.userId + "</strong>" +
+      "<strong>" + displayUser(user) + "</strong>" +
       "<div class='muted'>Net worth " + formatMoney(user.wallet + user.bank) + "</div>" +
       "<div class='user-stats'>" +
         "<span class='pill'>XP " + formatNumber(user.experience) + "</span>" +
@@ -770,7 +887,18 @@ async function loadUser(userId) {
   const data = await api("/api/users/" + userId);
   selected = userId;
   renderUsers();
-  showEditor(data.userId, data.user);
+  showEditor(data.userId, { ...data.user, displayName: data.displayName });
+}
+
+async function refreshSelectedUser() {
+  if (!selected) {
+    await loadUsers();
+    return;
+  }
+
+  const data = await api("/api/users/" + selected);
+  showEditor(data.userId, { ...data.user, displayName: data.displayName });
+  status("Refreshed " + (data.displayName || data.userId));
 }
 
 function showEditor(userId, user) {
@@ -778,9 +906,10 @@ function showEditor(userId, user) {
   document.getElementById("editor").classList.remove("hidden");
   document.getElementById("userId").value = userId;
   numberFields.forEach((field) => document.getElementById(field).value = user[field] || 0);
+  cooldownFields.forEach((field) => document.getElementById(field).value = Number(user[field]) > 0 ? toDateTimeLocal(user[field]) : "");
   document.getElementById("bankLevel").value = user.bankLevel || 1;
   activeBankDefenses = user.bankDefenses || {};
-  document.getElementById("editorTitle").textContent = userId ? "User " + userId : "New User";
+  document.getElementById("editorTitle").textContent = userId ? (user.displayName ? user.displayName + " (" + userId + ")" : "User " + userId) : "New User";
   document.getElementById("editorSubtitle").textContent = userId ? "Editing live stored data for this Discord account." : "Create a new stored economy profile.";
   renderBankDefenses();
   renderRig(user.rig || null);
@@ -817,15 +946,29 @@ function renderBankDefenses() {
   const defenses = Object.entries(activeBankDefenses || {}).filter(([, quantity]) => Number(quantity) > 0);
   root.innerHTML = "";
   if (defenses.length === 0) {
-    root.innerHTML = "<span class='pill'>No defenses installed</span>";
+    root.innerHTML = "<div class='pill'>No defenses installed</div>";
     return;
   }
-  defenses.forEach(([itemId, quantity]) => {
-    const el = document.createElement("span");
-    el.className = "pill good";
-    el.textContent = itemName(itemId) + " x" + formatNumber(quantity);
-    root.appendChild(el);
-  });
+  defenses.forEach(([itemId, quantity]) => addDefenseRow(itemId, quantity));
+}
+
+function addDefenseRow(itemId, quantity) {
+  const root = document.getElementById("bankDefenses");
+  root.querySelector(".pill")?.remove();
+  const row = document.createElement("div");
+  row.className = "defense-row";
+  row.innerHTML =
+    "<select class='defense-id'></select>" +
+    "<input class='defense-quantity' type='number' min='0' value='" + (Math.floor(Number(quantity) || 1)) + "'>" +
+    "<button type='button' class='danger'>x</button>";
+  const select = row.querySelector(".defense-id");
+  fillSelectElement(select, bankDefenseItems);
+  select.value = itemId;
+  row.querySelector("button").onclick = () => {
+    row.remove();
+    if (!document.querySelector(".defense-row")) root.innerHTML = "<div class='pill'>No defenses installed</div>";
+  };
+  root.appendChild(row);
 }
 
 function renderRig(rig) {
@@ -884,8 +1027,10 @@ function addItemRow(itemId, quantity) {
   root.querySelector(".pill")?.remove();
   const row = document.createElement("div");
   row.className = "inventory-row";
-  row.dataset.itemId = itemId;
-  row.innerHTML = "<div><strong>" + itemName(itemId) + "</strong><div class='muted'>" + itemId + "</div></div><input class='item-quantity' type='number' min='0' value='" + quantity + "'><button type='button' class='danger'>x</button>";
+  row.innerHTML = "<select class='item-id'></select><input class='item-quantity' type='number' min='0' value='" + quantity + "'><button type='button' class='danger'>x</button>";
+  const select = row.querySelector(".item-id");
+  fillSelectElement(select, items);
+  select.value = itemId;
   row.querySelector(".item-quantity").oninput = updateHumanReadableHints;
   row.querySelector("button").onclick = () => {
     row.remove();
@@ -928,18 +1073,19 @@ function addPetRow(petId, pet = {}, refreshEquipped = true) {
     "<div class='pet-row-head'><div><strong>" + petName(petId) + "</strong><div class='muted'>" + petId + "</div></div><button type='button' class='danger'>x</button></div>" +
     "<div class='grid-3'>" +
       "<div><label>XP</label><input class='pet-xp' type='number' min='0' value='" + xp + "'></div>" +
-      "<div><label>Fed Until</label><input class='pet-fed-until' type='datetime-local'></div>" +
-      "<div><label>Last Idle At</label><input class='pet-last-idle' type='datetime-local'></div>" +
+      "<div><label>Fed Until Date</label><input class='pet-fed-until' type='datetime-local'></div>" +
+      "<div><label>Last Idle Hunt Date</label><input class='pet-last-idle' type='datetime-local'></div>" +
     "</div>" +
     "<div class='grid-2'>" +
-      "<div><label>Stash JSON</label><textarea class='pet-stash pet-json'></textarea></div>" +
+      "<div><label>Stash Items</label><div class='pet-stash-list stack'></div><button type='button' class='secondary add-stash'>Add Stash Item</button></div>" +
       "<div><label>Boosts JSON</label><textarea class='pet-boosts pet-json'></textarea></div>" +
     "</div>";
 
   row.querySelector(".pet-fed-until").value = Number(pet.fedUntil) > 0 ? toDateTimeLocal(pet.fedUntil) : "";
   row.querySelector(".pet-last-idle").value = Number(pet.lastIdleAt) > 0 ? toDateTimeLocal(pet.lastIdleAt) : "";
-  row.querySelector(".pet-stash").value = JSON.stringify(pet.stash || {}, null, 2);
+  renderPetStash(row, pet.stash || {});
   row.querySelector(".pet-boosts").value = JSON.stringify(pet.boosts || {}, null, 2);
+  row.querySelector(".add-stash").onclick = () => addStashRow(row, items[0]?.id || "dirt", 1);
   row.querySelector("button").onclick = () => {
     row.remove();
     if (!document.querySelector(".pet-row")) root.innerHTML = "<div class='pill'>No pets owned</div>";
@@ -947,6 +1093,36 @@ function addPetRow(petId, pet = {}, refreshEquipped = true) {
   };
   root.appendChild(row);
   if (refreshEquipped) renderEquippedPetOptions(document.getElementById("equippedPet").value);
+}
+
+function renderPetStash(petRow, stash) {
+  const list = petRow.querySelector(".pet-stash-list");
+  list.innerHTML = "";
+  const entries = Object.entries(stash).filter(([, quantity]) => Number(quantity) > 0).sort(([a], [b]) => a.localeCompare(b));
+  if (entries.length === 0) {
+    list.innerHTML = "<div class='pill'>No stashed items</div>";
+    return;
+  }
+  entries.forEach(([itemId, quantity]) => addStashRow(petRow, itemId, quantity));
+}
+
+function addStashRow(petRow, itemId, quantity) {
+  const list = petRow.querySelector(".pet-stash-list");
+  list.querySelector(".pill")?.remove();
+  const row = document.createElement("div");
+  row.className = "stash-row";
+  row.innerHTML =
+    "<select class='stash-item-id'></select>" +
+    "<input class='stash-quantity' type='number' min='0' value='" + (Math.floor(Number(quantity) || 1)) + "'>" +
+    "<button type='button' class='danger'>x</button>";
+  const select = row.querySelector(".stash-item-id");
+  fillSelectElement(select, items);
+  select.value = itemId;
+  row.querySelector("button").onclick = () => {
+    row.remove();
+    if (!list.querySelector(".stash-row")) list.innerHTML = "<div class='pill'>No stashed items</div>";
+  };
+  list.appendChild(row);
 }
 
 function renderBoosts(activeBoosts) {
@@ -984,7 +1160,7 @@ function addItemFromModal(event) {
   event.preventDefault();
   const itemId = document.getElementById("itemToAdd").value;
   const quantity = Number(document.getElementById("itemQuantity").value) || 1;
-  const existing = [...document.querySelectorAll(".inventory-row")].find((row) => row.dataset.itemId === itemId);
+  const existing = [...document.querySelectorAll(".inventory-row")].find((row) => row.querySelector(".item-id").value === itemId);
   if (existing) {
     const input = existing.querySelector(".item-quantity");
     input.value = (Number(input.value) || 0) + quantity;
@@ -1052,11 +1228,18 @@ function fromDateTimeLocal(value) {
 function collectUser() {
   const user = {};
   numberFields.forEach((field) => user[field] = Number(document.getElementById(field).value) || 0);
-  user.bankDefenses = activeBankDefenses;
+  cooldownFields.forEach((field) => user[field] = fromDateTimeLocal(document.getElementById(field).value));
+  user.bankDefenses = {};
+  document.querySelectorAll(".defense-row").forEach((row) => {
+    const itemId = row.querySelector(".defense-id").value;
+    const quantity = Number(row.querySelector(".defense-quantity").value) || 0;
+    if (quantity > 0) user.bankDefenses[itemId] = (user.bankDefenses[itemId] || 0) + Math.floor(quantity);
+  });
   user.inventory = {};
   document.querySelectorAll(".inventory-row").forEach((row) => {
+    const itemId = row.querySelector(".item-id").value;
     const quantity = Number(row.querySelector(".item-quantity").value) || 0;
-    if (quantity > 0) user.inventory[row.dataset.itemId] = Math.floor(quantity);
+    if (quantity > 0) user.inventory[itemId] = (user.inventory[itemId] || 0) + Math.floor(quantity);
   });
   user.equippedPet = document.getElementById("equippedPet").value || null;
   user.pets = {};
@@ -1068,11 +1251,11 @@ function collectUser() {
     let stash = {};
     let boosts = {};
 
-    try {
-      stash = JSON.parse(row.querySelector(".pet-stash").value || "{}");
-    } catch {
-      stash = {};
-    }
+    row.querySelectorAll(".stash-row").forEach((stashRow) => {
+      const itemId = stashRow.querySelector(".stash-item-id").value;
+      const quantity = Number(stashRow.querySelector(".stash-quantity").value) || 0;
+      if (quantity > 0) stash[itemId] = (stash[itemId] || 0) + Math.floor(quantity);
+    });
 
     try {
       boosts = JSON.parse(row.querySelector(".pet-boosts").value || "{}");
@@ -1152,10 +1335,10 @@ applyTheme();
 boot().catch((error) => alert(error.message));
 document.addEventListener("change", (event) => {
   if (["rigEnabled", "rigGame", "rigOutcome", "rigHighlowRoll"].includes(event.target.id)) updateRigPreview();
-  if (numberFields.includes(event.target.id)) updateHumanReadableHints();
+  if (numberFields.includes(event.target.id) || cooldownFields.includes(event.target.id)) updateHumanReadableHints();
 });
 document.addEventListener("input", (event) => {
-  if (numberFields.includes(event.target.id) || event.target.classList.contains("item-quantity")) updateHumanReadableHints();
+  if (numberFields.includes(event.target.id) || cooldownFields.includes(event.target.id) || event.target.classList.contains("item-quantity")) updateHumanReadableHints();
 });
 </script>
 </body>
