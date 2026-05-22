@@ -53,6 +53,7 @@ const config = {
     alarm: process.env.ITEM_ALARM_EMOJI || null,
     hackdevice: process.env.ITEM_HACKDEVICE_EMOJI || null,
     void: process.env.ITEM_VOID_EMOJI || null,
+    businesscard: process.env.ITEM_BUSINESSCARD_EMOJI || null,
     watermelon: process.env.ITEM_WATERMELON_EMOJI || null,
     toco: process.env.ITEM_TOCO_EMOJI || null,
     smirkcat: process.env.ITEM_SMIRKCAT_EMOJI || null,

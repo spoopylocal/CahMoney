@@ -10,6 +10,8 @@ const DEFAULT_USER = {
   bankDefenses: {},
   experience: 0,
   inventory: {},
+  job: null,
+  jobHighAccess: false,
   pets: {},
   equippedPet: null,
   boosts: {},
@@ -76,7 +78,8 @@ const itemCatalog = [
   ["land_mine", "Land Mine"],
   ["guard", "Guard"],
   ["hackdevice", "Hack Device"],
-  ["void", "Void"]
+  ["void", "Void"],
+  ["businesscard", "Business Card"]
 ];
 
 const itemCategoryMap = {
@@ -131,7 +134,8 @@ const itemCategoryMap = {
   land_mine: "Bank",
   guard: "Bank",
   hackdevice: "Crime",
-  void: "Crime"
+  void: "Crime",
+  businesscard: "Crime"
 };
 
 const bankDefenseCatalog = [
@@ -228,6 +232,8 @@ function cleanUser(input) {
 
   user.bankDefenses = source.bankDefenses && typeof source.bankDefenses === "object" && !Array.isArray(source.bankDefenses) ? source.bankDefenses : {};
   user.inventory = source.inventory && typeof source.inventory === "object" && !Array.isArray(source.inventory) ? source.inventory : {};
+  user.job = source.job && typeof source.job === "object" && !Array.isArray(source.job) ? source.job : null;
+  user.jobHighAccess = Boolean(source.jobHighAccess);
   user.pets = source.pets && typeof source.pets === "object" && !Array.isArray(source.pets) ? source.pets : {};
   user.equippedPet = source.equippedPet || null;
   user.boosts = source.boosts && typeof source.boosts === "object" && !Array.isArray(source.boosts) ? source.boosts : {};

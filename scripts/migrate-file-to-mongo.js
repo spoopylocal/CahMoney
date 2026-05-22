@@ -11,6 +11,8 @@ const DEFAULT_USER = {
   bankDefenses: {},
   experience: 0,
   inventory: {},
+  job: null,
+  jobHighAccess: false,
   pets: {},
   equippedPet: null,
   boosts: {},

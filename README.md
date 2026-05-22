@@ -75,6 +75,7 @@ npm start
 - `/balance` - Check your wallet and bank.
 - `/beg` - Beg for coins with random outcomes.
 - `/work` - Work a goofy job for money.
+- `/jobs` - Apply for jobs, view job XP/promotions, or quit your current job.
 - `/daily` - Claim a daily reward.
 - `/bank` - Open the bank menu to view storage, upgrade costs, and installed defenses.
 - `/deposit amount` - Move coins from wallet to bank.
@@ -96,3 +97,5 @@ npm start
 Pets are bought from the shop. They do not drop from `/beg` or `/hunt`, and each pet has its own base idle hunt speed.
 
 Bank defense slots unlock with bank level: levels 1-2 have 1 slot, levels 3-5 have 2 slots, and levels 6-10 have 3 slots.
+
+Jobs have application chances, job XP, five promotion levels, and fail streaks. Medium jobs unlock at player level 10. High jobs unlock after buying and using a Business Card from the Black Market.

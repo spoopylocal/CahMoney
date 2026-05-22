@@ -25,6 +25,10 @@ const MINE_COOLDOWN = 45 * 1000;
 const LUCKY_CHARM_DURATION = 5 * 60 * 1000;
 const PET_IDLE_INTERVAL = 30 * 60 * 1000;
 const PET_MAX_IDLE_HUNTS = 48;
+const JOB_PROMOTION_XP = 300;
+const JOB_MAX_LEVEL = 5;
+const JOB_FAIL_LIMIT = 3;
+const MEDIUM_JOB_LEVEL = 10;
 const PAGE_SIZE = 5;
 const DEV_USER_ID = "749345623785996489";
 const BANKROB_BASE_SUCCESS_CHANCE = 0.28;
@@ -65,6 +69,7 @@ const shopItems = [
   { itemId: "guard", price: 100000, category: "bank" },
   { itemId: "hackdevice", price: 100000, category: "black_market" },
   { itemId: "void", price: 150000, category: "black_market" },
+  { itemId: "businesscard", price: 500000, category: "black_market" },
   { itemId: "watermelon", price: 650, category: "food" },
   { itemId: "toco", price: 900, category: "food" },
   { itemId: "orange", price: 350, category: "food" },
@@ -101,13 +106,164 @@ const petFoodItems = {
   crunch: { foodMs: 2 * 60 * 60 * 1000, luckBoost: 1, speedBoost: 1.2, boostMs: 45 * 60 * 1000 }
 };
 
-const jobs = [
-  "tested suspicious vending machines",
-  "sold premium air",
-  "moderated a group chat argument",
-  "found coins under a digital couch",
-  "wrote fake business emails"
-];
+const jobTiers = {
+  basic: { name: "Basic", color: 0x57f287 },
+  medium: { name: "Medium", color: 0xfee75c },
+  high: { name: "High", color: 0xed4245 }
+};
+
+const jobDefinitions = {
+  dog_walker: {
+    name: "Dog Walker",
+    tier: "basic",
+    applyChance: 82,
+    payMin: 250,
+    payMax: 650,
+    jobXpMin: 35,
+    jobXpMax: 55,
+    failFine: 150,
+    task: "A very dramatic dog refuses to cross the street. What do you do?",
+    choices: [
+      ["Treat", true],
+      ["Spreadsheet", false],
+      ["Lecture", false]
+    ]
+  },
+  burger_cashier: {
+    name: "Burger Cashier",
+    tier: "basic",
+    applyChance: 76,
+    payMin: 320,
+    payMax: 780,
+    jobXpMin: 40,
+    jobXpMax: 60,
+    failFine: 200,
+    task: "A customer asks for extra fries. Which button saves the shift?",
+    choices: [
+      ["Fries", true],
+      ["Beans", false],
+      ["Crown", false]
+    ]
+  },
+  mall_cop: {
+    name: "Mall Cop",
+    tier: "basic",
+    applyChance: 68,
+    payMin: 450,
+    payMax: 900,
+    jobXpMin: 45,
+    jobXpMax: 65,
+    failFine: 300,
+    task: "Someone is sprinting with unpaid boots. Pick the mall cop move.",
+    choices: [
+      ["Whistle", true],
+      ["Nap", false],
+      ["Receipt?", false]
+    ]
+  },
+  mechanic: {
+    name: "Mechanic",
+    tier: "medium",
+    applyChance: 54,
+    payMin: 1000,
+    payMax: 2200,
+    jobXpMin: 55,
+    jobXpMax: 80,
+    failFine: 800,
+    task: "A car is making a deeply expensive noise. First tool?",
+    choices: [
+      ["Wrench", true],
+      ["Toco", false],
+      ["Crown", false]
+    ]
+  },
+  security_tech: {
+    name: "Security Tech",
+    tier: "medium",
+    applyChance: 45,
+    payMin: 1400,
+    payMax: 2800,
+    jobXpMin: 60,
+    jobXpMax: 85,
+    failFine: 1100,
+    task: "A laser grid is blinking angry red. What do you check?",
+    choices: [
+      ["Power", true],
+      ["Vibes", false],
+      ["Burger", false]
+    ]
+  },
+  accountant: {
+    name: "Accountant",
+    tier: "medium",
+    applyChance: 38,
+    payMin: 1700,
+    payMax: 3400,
+    jobXpMin: 65,
+    jobXpMax: 90,
+    failFine: 1400,
+    task: "The budget is off by one suspicious zero. Best response?",
+    choices: [
+      ["Audit", true],
+      ["Ignore", false],
+      ["Confetti", false]
+    ]
+  },
+  ceo: {
+    name: "CEO",
+    tier: "high",
+    applyChance: 24,
+    payMin: 6000,
+    payMax: 13000,
+    jobXpMin: 80,
+    jobXpMax: 115,
+    failFine: 6000,
+    task: "The board asks for a growth plan. Pick the executive answer.",
+    choices: [
+      ["Roadmap", true],
+      ["Pebble", false],
+      ["Panic", false]
+    ]
+  },
+  bank_consultant: {
+    name: "Bank Consultant",
+    tier: "high",
+    applyChance: 18,
+    payMin: 8500,
+    payMax: 17000,
+    jobXpMin: 90,
+    jobXpMax: 125,
+    failFine: 8500,
+    task: "A client wants more storage. What do you recommend?",
+    choices: [
+      ["Upgrade", true],
+      ["Robbery", false],
+      ["Dirt", false]
+    ]
+  },
+  venture_capitalist: {
+    name: "Venture Capitalist",
+    tier: "high",
+    applyChance: 14,
+    payMin: 12000,
+    payMax: 24000,
+    jobXpMin: 100,
+    jobXpMax: 140,
+    failFine: 12000,
+    task: "A startup pitches edible CDs. Your move?",
+    choices: [
+      ["Due Diligence", true],
+      ["All In", false],
+      ["Eat CD", false]
+    ]
+  }
+};
+
+const jobIdsByTier = Object.entries(jobDefinitions).reduce((map, [jobId, job]) => {
+  map[job.tier] ||= [];
+  map[job.tier].push(jobId);
+  return map;
+}, {});
 
 const items = [
   { id: "xp_potion", name: "XP Potion", description: "Drink it for a burst of XP.", weight: 8, sellValue: 350, usable: true },
@@ -161,7 +317,8 @@ const items = [
   { id: "land_mine", name: "Land Mine", description: "Use it to install a bank defense.", weight: 0, sellValue: 18000, usable: true },
   { id: "guard", name: "Guard", description: "Use it to install a bank defense.", weight: 0, sellValue: 25000, usable: true },
   { id: "hackdevice", name: "Hack Device", description: "Use /scanbank to detect another player's bank defenses.", weight: 0, sellValue: 25000 },
-  { id: "void", name: "Void", description: "Use /voiddefense to erase one random bank defense from a player.", weight: 0, sellValue: 40000 }
+  { id: "void", name: "Void", description: "Use /voiddefense to erase one random bank defense from a player.", weight: 0, sellValue: 40000 },
+  { id: "businesscard", name: "Business Card", description: "Use it to unlock high-tier job applications.", weight: 0, sellValue: 100000, usable: true }
 ];
 
 const itemById = new Map(items.map((item) => [item.id, item]));
@@ -1056,6 +1213,14 @@ function useInventoryItem(interaction, user, itemId) {
     };
   }
 
+  if (itemId === "businesscard" && user.jobHighAccess) {
+    return {
+      title: "Already Unlocked",
+      message: "You already have high-tier job access. Keep the card in your inventory or sell it.",
+      color: 0xfee75c
+    };
+  }
+
   if (!removeItem(user, itemId)) {
     return {
       title: "Use Failed",
@@ -1098,6 +1263,16 @@ function useInventoryItem(interaction, user, itemId) {
     return {
       title: "Lucky Charm Used",
       message: `${formatItem(interaction, itemId)} activated. You have +20% luck for 5 minutes.`,
+      color: 0x57f287
+    };
+  }
+
+  if (itemId === "businesscard") {
+    user.jobHighAccess = true;
+
+    return {
+      title: "Business Card Used",
+      message: `${formatItem(interaction, itemId)} flashed your credentials. High-tier job applications are now unlocked.`,
       color: 0x57f287
     };
   }
@@ -1320,6 +1495,210 @@ function addExperience(user, min, max) {
   const earned = randomInt(min, max);
   user.experience = (user.experience || 0) + earned;
   return earned;
+}
+
+function getJobLevel(jobXp = 0) {
+  return Math.min(JOB_MAX_LEVEL, Math.floor(Math.max(0, Number(jobXp) || 0) / JOB_PROMOTION_XP) + 1);
+}
+
+function getNextJobLevelXp(jobLevel) {
+  return jobLevel >= JOB_MAX_LEVEL ? null : jobLevel * JOB_PROMOTION_XP;
+}
+
+function getJobXpUntilNext(job) {
+  const next = getNextJobLevelXp(job.level || 1);
+  return next === null ? null : Math.max(0, next - (job.xp || 0));
+}
+
+function normalizeJob(user) {
+  if (!user.job || !jobDefinitions[user.job.id]) {
+    user.job = null;
+    return null;
+  }
+
+  user.job.xp = Math.max(0, Math.floor(Number(user.job.xp) || 0));
+  user.job.level = getJobLevel(user.job.xp);
+  user.job.failStreak = Math.max(0, Math.floor(Number(user.job.failStreak) || 0));
+  user.job.hiredAt = Math.max(0, Math.floor(Number(user.job.hiredAt) || Date.now()));
+  return user.job;
+}
+
+function getUnlockedJobTiers(user) {
+  const tiers = ["basic"];
+  if (getLevel(user.experience || 0) >= MEDIUM_JOB_LEVEL) tiers.push("medium");
+  if (user.jobHighAccess) tiers.push("high");
+  return tiers;
+}
+
+function formatJobProgress(job) {
+  const next = getJobXpUntilNext(job);
+  return next === null ? `Promotion ${JOB_MAX_LEVEL}/${JOB_MAX_LEVEL} | Max promotion` : `Promotion ${job.level}/${JOB_MAX_LEVEL} | ${next.toLocaleString()} Job XP to next`;
+}
+
+function makeJobsView(interaction, user, notice = null) {
+  const job = normalizeJob(user);
+  const unlockedTiers = getUnlockedJobTiers(user);
+  const locked = [];
+  if (!unlockedTiers.includes("medium")) locked.push(`Medium jobs unlock at player level ${MEDIUM_JOB_LEVEL}.`);
+  if (!unlockedTiers.includes("high")) locked.push(`High jobs require using ${formatItem(interaction, "businesscard")}.`);
+
+  const currentText = job
+    ? `Current job: **${jobDefinitions[job.id].name}**\n${formatJobProgress(job)}\nFail streak: ${job.failStreak}/${JOB_FAIL_LIMIT}`
+    : "You do not have a job. Apply for one below.";
+
+  return makeEmbed(interaction, notice?.title || "Jobs", notice?.message || currentText, {
+    color: notice?.color || 0x5865f2,
+    fields: [
+      { name: "Current Job", value: currentText, inline: false },
+      { name: "Unlocked Tiers", value: unlockedTiers.map((tier) => jobTiers[tier].name).join(", "), inline: true },
+      { name: "Locked", value: locked.length > 0 ? locked.join("\n") : "All tiers unlocked.", inline: true }
+    ]
+  });
+}
+
+function makeJobsComponents(customIdPrefix, user, disabled = false) {
+  const unlockedTiers = getUnlockedJobTiers(user);
+  return [
+    new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId(`${customIdPrefix}_apply_basic`)
+        .setLabel("Apply Basic")
+        .setStyle(ButtonStyle.Success)
+        .setDisabled(disabled),
+      new ButtonBuilder()
+        .setCustomId(`${customIdPrefix}_apply_medium`)
+        .setLabel("Apply Medium")
+        .setStyle(ButtonStyle.Primary)
+        .setDisabled(disabled || !unlockedTiers.includes("medium")),
+      new ButtonBuilder()
+        .setCustomId(`${customIdPrefix}_apply_high`)
+        .setLabel("Apply High")
+        .setStyle(ButtonStyle.Danger)
+        .setDisabled(disabled || !unlockedTiers.includes("high")),
+      new ButtonBuilder()
+        .setCustomId(`${customIdPrefix}_quit`)
+        .setLabel("Quit Job")
+        .setStyle(ButtonStyle.Secondary)
+        .setDisabled(disabled || !user.job)
+    )
+  ];
+}
+
+function applyForJob(interaction, user, tier) {
+  normalizeJob(user);
+  if (user.job) {
+    return {
+      title: "Already Employed",
+      message: `You already work as **${jobDefinitions[user.job.id].name}**. Quit first if you want to apply somewhere else.`,
+      color: 0xfee75c
+    };
+  }
+
+  if (!getUnlockedJobTiers(user).includes(tier)) {
+    return {
+      title: "Tier Locked",
+      message: tier === "medium"
+        ? `Reach player level ${MEDIUM_JOB_LEVEL} to apply for medium jobs.`
+        : `Use ${formatItem(interaction, "businesscard")} to unlock high-tier job applications.`,
+      color: 0xed4245
+    };
+  }
+
+  const jobIds = jobIdsByTier[tier] || [];
+  const jobId = jobIds[randomInt(0, jobIds.length - 1)];
+  const job = jobDefinitions[jobId];
+  const hired = randomInt(1, 100) <= job.applyChance;
+
+  if (!hired) {
+    return {
+      title: "Application Denied",
+      message: `${job.name} passed on your application. Chance: ${job.applyChance}%. Try again later.`,
+      color: 0xed4245
+    };
+  }
+
+  user.job = {
+    id: jobId,
+    xp: 0,
+    level: 1,
+    failStreak: 0,
+    hiredAt: Date.now()
+  };
+
+  return {
+    title: "You Got The Job",
+    message: `You were hired as **${job.name}**. Use \`/work\` to start shifts.`,
+    color: jobTiers[tier].color
+  };
+}
+
+function shuffleRows(rows) {
+  return [...rows].sort(() => Math.random() - 0.5);
+}
+
+function makeWorkChallenge(job) {
+  return {
+    prompt: job.task,
+    choices: shuffleRows(job.choices).map(([label, correct]) => ({ label, correct }))
+  };
+}
+
+function makeWorkChallengeComponents(customIdPrefix, challenge, disabled = false) {
+  return [
+    new ActionRowBuilder().addComponents(
+      ...challenge.choices.map((choice, index) =>
+        new ButtonBuilder()
+          .setCustomId(`${customIdPrefix}_choice_${index}`)
+          .setLabel(choice.label)
+          .setStyle(ButtonStyle.Primary)
+          .setDisabled(disabled)
+      )
+    )
+  ];
+}
+
+function completeJobShift(interaction, user, job, success) {
+  const oldLevel = user.job.level || 1;
+
+  if (success) {
+    user.job.failStreak = 0;
+    const jobXp = randomInt(job.jobXpMin, job.jobXpMax);
+    user.job.xp = (user.job.xp || 0) + jobXp;
+    user.job.level = getJobLevel(user.job.xp);
+    const payout = Math.floor(randomInt(job.payMin, job.payMax) * (1 + (user.job.level - 1) * 0.25));
+    const xp = addExperience(user, 8 + user.job.level * 2, 16 + user.job.level * 4);
+    user.wallet += payout;
+
+    return {
+      title: "Shift Passed",
+      message: `You handled the shift as **${job.name}** and earned ${formatMoney(interaction, payout)}.`,
+      color: 0x57f287,
+      coins: payout,
+      jobXp,
+      promoted: user.job.level > oldLevel,
+      job: user.job,
+      xp,
+      totalExperience: user.experience
+    };
+  }
+
+  user.job.failStreak += 1;
+  const fine = Math.min(user.wallet, Math.floor(job.failFine * (1 + (user.job.level - 1) * 0.25)));
+  user.wallet -= fine;
+  const fired = user.job.failStreak >= JOB_FAIL_LIMIT;
+  const failedJob = { ...user.job };
+  if (fired) user.job = null;
+
+  return {
+    title: fired ? "You Got Fired" : "Shift Failed",
+    message: fired
+      ? `You failed ${JOB_FAIL_LIMIT} shifts in a row and got fired from **${job.name}**. Final penalty: ${formatMoney(interaction, fine)}.`
+      : `The shift went badly. **${job.name}** fined you ${formatMoney(interaction, fine)}. Fail streak: ${failedJob.failStreak}/${JOB_FAIL_LIMIT}.`,
+    color: fired ? 0xed4245 : 0xfee75c,
+    fine,
+    fired,
+    job: failedJob
+  };
 }
 
 function getExperienceProgress(interaction, totalExperience) {
@@ -2528,9 +2907,90 @@ const commands = [
     }
   },
   {
+    data: new SlashCommandBuilder().setName("jobs").setDescription("Apply for jobs and view job progress."),
+    async execute(interaction) {
+      const customIdPrefix = `jobs_${interaction.id}`;
+      const state = await withStore((store) => {
+        const user = getUser(store, interaction.user.id);
+        return { user };
+      });
+
+      const message = await interaction.reply({
+        embeds: [makeJobsView(interaction, state.user)],
+        components: makeJobsComponents(customIdPrefix, state.user),
+        fetchReply: true
+      });
+
+      const collector = message.createMessageComponentCollector({
+        componentType: ComponentType.Button,
+        time: 2 * 60 * 1000
+      });
+
+      collector.on("collect", async (buttonInteraction) => {
+        if (buttonInteraction.user.id !== interaction.user.id) {
+          await buttonInteraction.reply({ content: "This jobs menu is not yours.", ephemeral: true });
+          return;
+        }
+
+        const action = buttonInteraction.customId.replace(`${customIdPrefix}_`, "");
+        const result = await withStore((store) => {
+          const user = getUser(store, interaction.user.id);
+
+          if (action.startsWith("apply_")) {
+            const tier = action.replace("apply_", "");
+            const notice = applyForJob(interaction, user, tier);
+            return { user, notice };
+          }
+
+          if (action === "quit") {
+            const job = normalizeJob(user);
+            if (!job) {
+              return {
+                user,
+                notice: {
+                  title: "No Job",
+                  message: "You do not have a job to quit.",
+                  color: 0xfee75c
+                }
+              };
+            }
+
+            const jobName = jobDefinitions[job.id].name;
+            user.job = null;
+            return {
+              user,
+              notice: {
+                title: "Job Quit",
+                message: `You quit **${jobName}**.`,
+                color: 0xfee75c
+              }
+            };
+          }
+
+          return { user, notice: null };
+        });
+
+        await buttonInteraction.update({
+          embeds: [makeJobsView(interaction, result.user, result.notice)],
+          components: makeJobsComponents(customIdPrefix, result.user)
+        });
+      });
+
+      collector.on("end", async () => {
+        const state = await withStore((store) => {
+          const user = getUser(store, interaction.user.id);
+          return { user };
+        }).catch(() => null);
+        await message.edit({
+          components: makeJobsComponents(customIdPrefix, state?.user || {}, true)
+        }).catch(() => {});
+      });
+    }
+  },
+  {
     data: new SlashCommandBuilder().setName("work").setDescription("Work a weird little job for coins."),
     async execute(interaction) {
-      const outcome = await withStore((store) => {
+      const start = await withStore((store) => {
         const user = getUser(store, interaction.user.id);
         const cooldown = getCooldown(user.lastWork, WORK_COOLDOWN);
 
@@ -2542,29 +3002,93 @@ const commands = [
           };
         }
 
+        const currentJob = normalizeJob(user);
+        if (!currentJob) {
+          return {
+            title: "No Job",
+            message: "You need a job before you can work. Use `/jobs` to apply.",
+            color: 0xfee75c
+          };
+        }
+
         user.lastWork = Date.now();
+        const job = jobDefinitions[currentJob.id];
+        const challenge = makeWorkChallenge(job);
 
-        const earned = randomInt(150, 600);
-        const xp = addExperience(user, 10, 20);
-        const job = jobs[randomInt(0, jobs.length - 1)];
-        user.wallet += earned;
-
-        return {
-          title: "Shift Complete",
-          message: `You ${job} and earned ${formatMoney(interaction, earned)}.`,
-          color: 0x57f287,
-          coins: earned,
-          xp,
-          totalExperience: user.experience
-        };
+        return { ok: true, jobId: currentJob.id, job, challenge };
       });
 
-      await replyEmbed(interaction, outcome.title, outcome.message, {
-        color: outcome.color,
+      if (!start.ok) {
+        await replyEmbed(interaction, start.title, start.message, { color: start.color });
+        return;
+      }
+
+      const customIdPrefix = `work_${interaction.id}`;
+      const embed = makeEmbed(interaction, `${start.job.name} Shift`, start.challenge.prompt, {
+        color: jobTiers[start.job.tier].color,
         fields: [
-          ...(outcome.coins ? [{ name: "Coins Earned", value: formatMoney(interaction, outcome.coins), inline: true }] : []),
-          ...xpFields(interaction, outcome)
+          { name: "Job Tier", value: jobTiers[start.job.tier].name, inline: true },
+          { name: "Task", value: "Pick the right action to pass this shift.", inline: true }
         ]
+      });
+
+      const message = await interaction.reply({
+        embeds: [embed],
+        components: makeWorkChallengeComponents(customIdPrefix, start.challenge),
+        fetchReply: true
+      });
+
+      const collector = message.createMessageComponentCollector({
+        componentType: ComponentType.Button,
+        time: 60 * 1000,
+        max: 1
+      });
+
+      collector.on("collect", async (buttonInteraction) => {
+        if (buttonInteraction.user.id !== interaction.user.id) {
+          await buttonInteraction.reply({ content: "This work shift is not yours.", ephemeral: true });
+          return;
+        }
+
+        const index = Number(buttonInteraction.customId.split("_").pop());
+        const choice = start.challenge.choices[index];
+        const outcome = await withStore((store) => {
+          const user = getUser(store, interaction.user.id);
+          const currentJob = normalizeJob(user);
+          if (!currentJob || currentJob.id !== start.jobId) {
+            return {
+              title: "Shift Cancelled",
+              message: "You no longer have this job.",
+              color: 0xed4245
+            };
+          }
+
+          return completeJobShift(interaction, user, start.job, Boolean(choice?.correct));
+        });
+
+        await buttonInteraction.update({
+          embeds: [
+            makeEmbed(interaction, outcome.title, `${outcome.message}${choice ? `\n\nYou picked: **${choice.label}**.` : ""}`, {
+              color: outcome.color,
+              fields: [
+                ...(outcome.coins ? [{ name: "Coins Earned", value: formatMoney(interaction, outcome.coins), inline: true }] : []),
+                ...(outcome.fine ? [{ name: "Penalty", value: formatMoney(interaction, outcome.fine), inline: true }] : []),
+                ...(outcome.jobXp ? [{ name: "Job XP", value: `${outcome.jobXp.toLocaleString()}${outcome.promoted ? "\nPromoted!" : ""}`, inline: true }] : []),
+                ...(outcome.job ? [{ name: "Job Progress", value: outcome.fired ? "Fired" : formatJobProgress(outcome.job), inline: true }] : []),
+                ...xpFields(interaction, outcome)
+              ]
+            })
+          ],
+          components: makeWorkChallengeComponents(customIdPrefix, start.challenge, true)
+        });
+      });
+
+      collector.on("end", async (collected) => {
+        if (collected.size > 0) return;
+        await message.edit({
+          embeds: [makeEmbed(interaction, "Shift Timed Out", "You missed the shift window. The cooldown still counts.", { color: 0xfee75c })],
+          components: makeWorkChallengeComponents(customIdPrefix, start.challenge, true)
+        }).catch(() => {});
       });
     }
   },
