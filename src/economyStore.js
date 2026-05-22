@@ -1,5 +1,6 @@
 const fs = require("node:fs/promises");
 const path = require("node:path");
+const { MongoClient } = require("mongodb");
 const { config } = require("./config");
 
 const DEFAULT_USER = {
@@ -26,6 +27,9 @@ const DEFAULT_USER = {
 const dataDir = path.resolve(process.cwd(), config.dataDir);
 const storePath = path.join(dataDir, "economy.json");
 let storeQueue = Promise.resolve();
+let storeMode = "file";
+let mongoClient = null;
+let mongoCollection = null;
 
 function normalizeStore(store) {
   const normalized = {
@@ -37,6 +41,18 @@ function normalizeStore(store) {
   }
 
   return normalized;
+}
+
+function userToMongoDoc(userId, user) {
+  return {
+    _id: userId,
+    ...user
+  };
+}
+
+function mongoDocToUser(doc) {
+  const { _id, ...user } = doc;
+  return { ...DEFAULT_USER, ...user };
 }
 
 async function writeStore(store) {
@@ -69,20 +85,75 @@ async function readStore() {
   }
 }
 
+async function readMongoStore() {
+  const docs = await mongoCollection.find({}).toArray();
+  const store = { users: {} };
+
+  for (const doc of docs) {
+    store.users[String(doc._id)] = mongoDocToUser(doc);
+  }
+
+  return normalizeStore(store);
+}
+
+async function writeMongoStore(store) {
+  const normalized = normalizeStore(store);
+  const userIds = Object.keys(normalized.users);
+
+  if (userIds.length === 0) {
+    await mongoCollection.deleteMany({});
+    return;
+  }
+
+  await mongoCollection.bulkWrite([
+    ...Object.entries(normalized.users).map(([userId, user]) => ({
+      replaceOne: {
+        filter: { _id: userId },
+        replacement: userToMongoDoc(userId, user),
+        upsert: true
+      }
+    })),
+    {
+      deleteMany: {
+        filter: { _id: { $nin: userIds } }
+      }
+    }
+  ]);
+}
+
 async function connectStore() {
+  if (config.mongodbUri) {
+    mongoClient = new MongoClient(config.mongodbUri);
+    await mongoClient.connect();
+    mongoCollection = mongoClient.db(config.mongodbDb).collection(config.mongodbCollection);
+    await mongoClient.db(config.mongodbDb).command({ ping: 1 });
+    storeMode = "mongodb";
+    return `MongoDB "${config.mongodbDb}.${config.mongodbCollection}"`;
+  }
+
   await readStore();
   return storePath;
 }
 
 async function closeStore() {
   await storeQueue;
+  if (mongoClient) {
+    await mongoClient.close();
+    mongoClient = null;
+    mongoCollection = null;
+  }
 }
 
 async function withStore(mutator) {
   const operation = storeQueue.then(async () => {
-    const store = await readStore();
+    const store = storeMode === "mongodb" ? await readMongoStore() : await readStore();
+    const before = JSON.stringify(store);
     const result = await mutator(store);
-    await writeStore(store);
+    const changed = JSON.stringify(store) !== before;
+    if (changed) {
+      if (storeMode === "mongodb") await writeMongoStore(store);
+      else await writeStore(store);
+    }
     return result;
   });
 

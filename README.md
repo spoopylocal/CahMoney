@@ -24,6 +24,22 @@ DATA_DIR=data
 
 The bot writes economy data to `DATA_DIR/economy.json`. Keep this folder backed up on your host.
 
+To use MongoDB instead of the local JSON file, add:
+
+```bash
+MONGODB_URI=mongodb+srv://...
+MONGODB_DB=economybot
+MONGODB_COLLECTION=users
+```
+
+`MONGODB` can also be used instead of `MONGODB_URI`. When either one is set, the bot uses MongoDB automatically.
+
+To upload your current local `data/economy.json` into MongoDB:
+
+```bash
+npm run migrate:file-to-mongo
+```
+
 4. Optionally enable the admin web editor.
 
 ```bash

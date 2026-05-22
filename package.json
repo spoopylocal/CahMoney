@@ -6,7 +6,8 @@
   "scripts": {
     "start": "node src/index.js",
     "deploy": "node src/deploy-commands.js",
-    "migrate:mongo": "node scripts/migrate-mongo-to-file.js"
+    "migrate:mongo": "node scripts/migrate-mongo-to-file.js",
+    "migrate:file-to-mongo": "node scripts/migrate-file-to-mongo.js"
   },
   "keywords": [
     "discord",

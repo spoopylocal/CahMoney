@@ -50,8 +50,8 @@ client.on(Events.InteractionCreate, async (interaction) => {
 });
 
 async function main() {
-  const storePath = await connectStore();
-  console.log(`Using economy data file "${storePath}".`);
+  const storeLocation = await connectStore();
+  console.log(`Using economy store ${storeLocation}.`);
   adminServer = startAdminServer();
   await client.login(config.token);
 }
