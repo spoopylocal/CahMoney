@@ -83,6 +83,16 @@ const boostCatalog = [
   ["lucky_charm", "Lucky Charm"]
 ];
 
+const petCatalog = [
+  ["basicdog", "Basic Dog"],
+  ["cat", "Cat"],
+  ["funnydog", "Funny Dog"],
+  ["geckodragon", "Gecko Dragon"],
+  ["lizard", "Lizard"],
+  ["rufus", "Rufus"],
+  ["smirkcat", "Smirk Cat"]
+];
+
 const rigGames = [
   ["next", "Next Game"],
   ["gamble", "Gamble"],
@@ -164,6 +174,47 @@ function cleanUser(input) {
     else delete user.boosts[boostId];
   }
 
+  for (const [petId, petData] of Object.entries(user.pets)) {
+    if (!petCatalog.some(([id]) => id === petId) || !petData || typeof petData !== "object" || Array.isArray(petData)) {
+      delete user.pets[petId];
+      continue;
+    }
+
+    const xp = Math.max(0, Math.floor(Number(petData.xp) || 0));
+    const fedUntil = Math.max(0, Math.floor(Number(petData.fedUntil) || 0));
+    const lastIdleAt = Math.max(0, Math.floor(Number(petData.lastIdleAt) || Date.now()));
+    const stash = petData.stash && typeof petData.stash === "object" && !Array.isArray(petData.stash) ? petData.stash : {};
+    const boosts = petData.boosts && typeof petData.boosts === "object" && !Array.isArray(petData.boosts) ? petData.boosts : {};
+
+    for (const [itemId, quantity] of Object.entries(stash)) {
+      const amount = Math.floor(Number(quantity) || 0);
+      if (amount > 0) stash[itemId] = amount;
+      else delete stash[itemId];
+    }
+
+    for (const [boostId, boost] of Object.entries(boosts)) {
+      if (!boost || typeof boost !== "object" || Array.isArray(boost)) {
+        delete boosts[boostId];
+        continue;
+      }
+
+      const multiplier = Number(boost.multiplier) || 1;
+      const expiresAt = Math.floor(Number(boost.expiresAt) || 0);
+      if (expiresAt > 0) boosts[boostId] = { multiplier, expiresAt };
+      else delete boosts[boostId];
+    }
+
+    user.pets[petId] = {
+      id: petId,
+      xp,
+      level: Math.floor(xp / 100) + 1,
+      fedUntil,
+      lastIdleAt,
+      stash,
+      boosts
+    };
+  }
+
   if (user.equippedPet && !user.pets[user.equippedPet]) user.equippedPet = null;
 
   return user;
@@ -189,6 +240,7 @@ async function handleApi(req, res, pathname) {
   if (req.method === "GET" && pathname === "/api/meta") {
     send(res, 200, {
       items: itemCatalog.map(([id, name]) => ({ id, name })),
+      pets: petCatalog.map(([id, name]) => ({ id, name })),
       boosts: boostCatalog.map(([id, name]) => ({ id, name })),
       rigGames: rigGames.map(([id, name]) => ({ id, name })),
       rigOutcomes: rigOutcomes.map(([id, name]) => ({ id, name }))
@@ -326,6 +378,9 @@ function pageHtml() {
     .rig-card { border: 1px solid var(--border); border-radius: 8px; padding: 12px; background: var(--surface-2); margin-top: 12px; }
     .inventory-row, .boost-row { display: grid; grid-template-columns: 1fr 110px 42px; gap: 8px; margin-bottom: 8px; align-items: center; }
     .boost-row { grid-template-columns: 1fr 190px 42px; }
+    .pet-row { border: 1px solid var(--border); border-radius: 8px; padding: 12px; background: var(--surface-2); margin-bottom: 10px; }
+    .pet-row-head { display: flex; justify-content: space-between; gap: 12px; align-items: center; margin-bottom: 10px; }
+    .pet-json { min-height: 76px; }
     #login { max-width: 430px; margin: 80px auto; }
     #status { min-height: 18px; }
     @media (max-width: 900px) {
@@ -427,6 +482,20 @@ function pageHtml() {
           <div class="panel">
             <div class="panel-head">
               <div>
+                <h2>Pets</h2>
+                <p class="muted">Edit owned pets, equipped pet, XP, food time, and stash.</p>
+              </div>
+              <button type="button" onclick="openPetModal()">Add Pet</button>
+            </div>
+            <div class="grid-2">
+              <div><label>Equipped Pet</label><select id="equippedPet"></select></div>
+            </div>
+            <div id="pets"></div>
+          </div>
+
+          <div class="panel">
+            <div class="panel-head">
+              <div>
                 <h2>Boosts</h2>
                 <p class="muted">Add timed boosts without editing JSON.</p>
               </div>
@@ -487,10 +556,23 @@ function pageHtml() {
     </form>
   </dialog>
 
+  <dialog id="petModal">
+    <form method="dialog" onsubmit="addPetFromModal(event)">
+      <h3>Add Pet</h3>
+      <p class="muted">Choose a pet to add to this user.</p>
+      <div class="grid-2">
+        <div><label>Pet</label><select id="petToAdd"></select></div>
+        <div><label>Starting XP</label><input id="petStartingXp" type="number" min="0" value="0"></div>
+      </div>
+      <div class="bar"><button>Add</button><button type="button" class="secondary" onclick="closeDialog('petModal')">Cancel</button></div>
+    </form>
+  </dialog>
+
 <script>
 const numberFields = ["wallet","bank","bankLevel","experience","lastBeg","lastWork","lastDaily","lastRob","lastBankrob","lastHunt","lastGive","lastMine"];
 let users = [];
 let items = [];
+let pets = [];
 let boosts = [];
 let rigGames = [];
 let rigOutcomes = [];
@@ -542,10 +624,12 @@ async function boot() {
   document.getElementById("app").classList.remove("hidden");
   const meta = await api("/api/meta");
   items = meta.items;
+  pets = meta.pets;
   boosts = meta.boosts;
   rigGames = meta.rigGames;
   rigOutcomes = meta.rigOutcomes;
   fillSelect("itemToAdd", items);
+  fillSelect("petToAdd", pets);
   fillSelect("boostToAdd", boosts);
   fillSelect("rigGame", rigGames);
   fillSelect("rigOutcome", rigOutcomes);
@@ -605,6 +689,7 @@ function showEditor(userId, user) {
   activeBankDefenses = user.bankDefenses || {};
   renderRig(user.rig || null);
   renderInventory(user.inventory || {});
+  renderPets(user.pets || {}, user.equippedPet || null);
   renderBoosts(user.boosts || {});
   status("");
 }
@@ -643,6 +728,10 @@ function boostName(boostId) {
   return boosts.find((boost) => boost.id === boostId)?.name || boostId;
 }
 
+function petName(petId) {
+  return pets.find((pet) => pet.id === petId)?.name || petId;
+}
+
 function renderInventory(inventory) {
   const root = document.getElementById("inventory");
   root.innerHTML = "";
@@ -657,6 +746,55 @@ function addItemRow(itemId, quantity) {
   row.innerHTML = "<div><strong>" + itemName(itemId) + "</strong><div class='muted'>" + itemId + "</div></div><input class='item-quantity' type='number' min='0' value='" + quantity + "'><button type='button' class='danger'>x</button>";
   row.querySelector("button").onclick = () => row.remove();
   root.appendChild(row);
+}
+
+function renderEquippedPetOptions(equippedPet) {
+  const select = document.getElementById("equippedPet");
+  const rows = [...document.querySelectorAll(".pet-row")].map((row) => row.dataset.petId);
+  select.innerHTML = "<option value=''>None</option>" + rows.map((petId) =>
+    "<option value='" + petId + "'>" + petName(petId) + " (" + petId + ")</option>"
+  ).join("");
+  select.value = rows.includes(equippedPet) ? equippedPet : "";
+}
+
+function renderPets(activePets, equippedPet) {
+  const root = document.getElementById("pets");
+  root.innerHTML = "";
+  Object.entries(activePets).sort(([a], [b]) => a.localeCompare(b)).forEach(([petId, pet]) => addPetRow(petId, pet, false));
+  renderEquippedPetOptions(equippedPet);
+}
+
+function addPetRow(petId, pet = {}, refreshEquipped = true) {
+  const root = document.getElementById("pets");
+  const existing = [...document.querySelectorAll(".pet-row")].find((row) => row.dataset.petId === petId);
+  if (existing) existing.remove();
+
+  const xp = Math.max(0, Math.floor(Number(pet.xp) || 0));
+  const row = document.createElement("div");
+  row.className = "pet-row";
+  row.dataset.petId = petId;
+  row.innerHTML =
+    "<div class='pet-row-head'><div><strong>" + petName(petId) + "</strong><div class='muted'>" + petId + "</div></div><button type='button' class='danger'>x</button></div>" +
+    "<div class='grid-3'>" +
+      "<div><label>XP</label><input class='pet-xp' type='number' min='0' value='" + xp + "'></div>" +
+      "<div><label>Fed Until</label><input class='pet-fed-until' type='datetime-local'></div>" +
+      "<div><label>Last Idle At</label><input class='pet-last-idle' type='datetime-local'></div>" +
+    "</div>" +
+    "<div class='grid-2'>" +
+      "<div><label>Stash JSON</label><textarea class='pet-stash pet-json'></textarea></div>" +
+      "<div><label>Boosts JSON</label><textarea class='pet-boosts pet-json'></textarea></div>" +
+    "</div>";
+
+  row.querySelector(".pet-fed-until").value = Number(pet.fedUntil) > 0 ? toDateTimeLocal(pet.fedUntil) : "";
+  row.querySelector(".pet-last-idle").value = Number(pet.lastIdleAt) > 0 ? toDateTimeLocal(pet.lastIdleAt) : "";
+  row.querySelector(".pet-stash").value = JSON.stringify(pet.stash || {}, null, 2);
+  row.querySelector(".pet-boosts").value = JSON.stringify(pet.boosts || {}, null, 2);
+  row.querySelector("button").onclick = () => {
+    row.remove();
+    renderEquippedPetOptions(document.getElementById("equippedPet").value);
+  };
+  root.appendChild(row);
+  if (refreshEquipped) renderEquippedPetOptions(document.getElementById("equippedPet").value);
 }
 
 function renderBoosts(activeBoosts) {
@@ -693,6 +831,27 @@ function addItemFromModal(event) {
     addItemRow(itemId, quantity);
   }
   closeDialog("itemModal");
+}
+
+function openPetModal() {
+  document.getElementById("petStartingXp").value = 0;
+  document.getElementById("petModal").showModal();
+}
+
+function addPetFromModal(event) {
+  event.preventDefault();
+  const petId = document.getElementById("petToAdd").value;
+  const xp = Number(document.getElementById("petStartingXp").value) || 0;
+  addPetRow(petId, {
+    id: petId,
+    xp,
+    level: Math.floor(xp / 100) + 1,
+    fedUntil: 0,
+    lastIdleAt: Date.now(),
+    stash: {},
+    boosts: {}
+  });
+  closeDialog("petModal");
 }
 
 function openBoostModal() {
@@ -737,6 +896,39 @@ function collectUser() {
     const quantity = Number(row.querySelector(".item-quantity").value) || 0;
     if (quantity > 0) user.inventory[row.dataset.itemId] = Math.floor(quantity);
   });
+  user.equippedPet = document.getElementById("equippedPet").value || null;
+  user.pets = {};
+  document.querySelectorAll(".pet-row").forEach((row) => {
+    const petId = row.dataset.petId;
+    const xp = Math.max(0, Math.floor(Number(row.querySelector(".pet-xp").value) || 0));
+    const fedUntil = fromDateTimeLocal(row.querySelector(".pet-fed-until").value);
+    const lastIdleAt = fromDateTimeLocal(row.querySelector(".pet-last-idle").value);
+    let stash = {};
+    let boosts = {};
+
+    try {
+      stash = JSON.parse(row.querySelector(".pet-stash").value || "{}");
+    } catch {
+      stash = {};
+    }
+
+    try {
+      boosts = JSON.parse(row.querySelector(".pet-boosts").value || "{}");
+    } catch {
+      boosts = {};
+    }
+
+    user.pets[petId] = {
+      id: petId,
+      xp,
+      level: Math.floor(xp / 100) + 1,
+      fedUntil,
+      lastIdleAt,
+      stash,
+      boosts
+    };
+  });
+  if (user.equippedPet && !user.pets[user.equippedPet]) user.equippedPet = null;
   user.boosts = {};
   document.querySelectorAll(".boost-row").forEach((row) => {
     const expiresAt = fromDateTimeLocal(row.querySelector(".boost-expires").value);
