@@ -160,6 +160,22 @@ const petCatalog = [
   ["smirkcat", "Smirk Cat"]
 ];
 
+const JOB_PROMOTION_XP = 300;
+const JOB_MAX_LEVEL = 5;
+const JOB_FAIL_LIMIT = 3;
+
+const jobCatalog = [
+  ["dog_walker", "Dog Walker", "basic"],
+  ["burger_cashier", "Burger Cashier", "basic"],
+  ["mall_cop", "Mall Cop", "basic"],
+  ["mechanic", "Mechanic", "medium"],
+  ["security_tech", "Security Tech", "medium"],
+  ["accountant", "Accountant", "medium"],
+  ["ceo", "CEO", "high"],
+  ["bank_consultant", "Bank Consultant", "high"],
+  ["venture_capitalist", "Venture Capitalist", "high"]
+];
+
 const rigGames = [
   ["next", "Next Game"],
   ["gamble", "Gamble"],
@@ -234,8 +250,29 @@ function cleanUser(input) {
   user.bankDefenses = source.bankDefenses && typeof source.bankDefenses === "object" && !Array.isArray(source.bankDefenses) ? source.bankDefenses : {};
   user.inventory = source.inventory && typeof source.inventory === "object" && !Array.isArray(source.inventory) ? source.inventory : {};
   user.job = source.job && typeof source.job === "object" && !Array.isArray(source.job) ? source.job : null;
+  if (user.job) {
+    const jobId = String(user.job.id || "");
+    if (!jobCatalog.some(([id]) => id === jobId)) {
+      user.job = null;
+    } else {
+      const xp = Math.max(0, Math.floor(Number(user.job.xp) || 0));
+      const level = Math.min(JOB_MAX_LEVEL, Math.max(1, Math.floor(Number(user.job.level) || Math.floor(xp / JOB_PROMOTION_XP) + 1)));
+      user.job = {
+        id: jobId,
+        xp,
+        level,
+        failStreak: Math.min(JOB_FAIL_LIMIT, Math.max(0, Math.floor(Number(user.job.failStreak) || 0))),
+        hiredAt: Math.max(0, Math.floor(Number(user.job.hiredAt) || Date.now()))
+      };
+    }
+  }
   user.jobHighAccess = Boolean(source.jobHighAccess);
   user.jobApplyCooldowns = source.jobApplyCooldowns && typeof source.jobApplyCooldowns === "object" && !Array.isArray(source.jobApplyCooldowns) ? source.jobApplyCooldowns : {};
+  for (const tier of ["basic", "medium", "high"]) {
+    const timestamp = Math.max(0, Math.floor(Number(user.jobApplyCooldowns[tier]) || 0));
+    if (timestamp > 0) user.jobApplyCooldowns[tier] = timestamp;
+    else delete user.jobApplyCooldowns[tier];
+  }
   user.pets = source.pets && typeof source.pets === "object" && !Array.isArray(source.pets) ? source.pets : {};
   user.equippedPet = source.equippedPet || null;
   user.boosts = source.boosts && typeof source.boosts === "object" && !Array.isArray(source.boosts) ? source.boosts : {};
@@ -324,6 +361,8 @@ async function handleApi(req, res, pathname) {
       items: itemCatalog.map(([id, name]) => ({ id, name, category: itemCategoryMap[id] || "Other" })),
       bankDefenses: bankDefenseCatalog.map(([id, name]) => ({ id, name, category: "Bank" })),
       pets: petCatalog.map(([id, name]) => ({ id, name })),
+      jobs: jobCatalog.map(([id, name, tier]) => ({ id, name, tier })),
+      jobRules: { promotionXp: JOB_PROMOTION_XP, maxLevel: JOB_MAX_LEVEL, failLimit: JOB_FAIL_LIMIT },
       boosts: boostCatalog.map(([id, name]) => ({ id, name })),
       rigGames: rigGames.map(([id, name]) => ({ id, name })),
       rigOutcomes: rigOutcomes.map(([id, name]) => ({ id, name }))
@@ -503,12 +542,21 @@ function pageHtml() {
     .pet-json { min-height: 76px; margin-top: 8px; }
     .defense-list { display: flex; flex-wrap: wrap; gap: 8px; }
     .stack { display: grid; gap: 8px; }
-    .section-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(320px, 0.65fr); gap: 16px; align-items: start; }
+    .editor-shell { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 16px; align-items: start; }
+    .category-nav { position: sticky; top: 88px; display: grid; gap: 8px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 10px; box-shadow: var(--shadow); }
+    .category-tab { width: 100%; display: flex; justify-content: space-between; align-items: center; gap: 8px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text); text-align: left; }
+    .category-tab:hover, .category-tab.active { border-color: var(--primary); background: var(--surface-3); color: var(--primary-strong); }
+    .section-body { min-width: 0; }
+    .editor-section { display: none; }
+    .editor-section.active { display: block; }
+    .inline-check { display: flex; gap: 8px; align-items: center; color: var(--text); font-size: 14px; margin-bottom: 12px; }
+    .inline-check input { width: auto; margin: 0; }
     .wide { grid-column: 1 / -1; }
     #login { max-width: 430px; margin: 80px auto; }
     #status { min-height: 18px; }
     @media (max-width: 1100px) {
-      .section-grid { grid-template-columns: 1fr; }
+      .editor-shell { grid-template-columns: 1fr; }
+      .category-nav { position: static; grid-template-columns: repeat(4, minmax(0, 1fr)); }
       .summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     }
     @media (max-width: 900px) {
@@ -520,6 +568,7 @@ function pageHtml() {
     @media (max-width: 560px) {
       header, .toolbar, .bar, .editor-actions { align-items: stretch; flex-direction: column; }
       .search-block, .inventory-row, .boost-row, .defense-row, .stash-row { grid-template-columns: 1fr; }
+      .category-nav { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .summary-grid { grid-template-columns: 1fr; }
     }
   </style>
@@ -581,8 +630,20 @@ function pageHtml() {
             </div>
           </div>
 
-          <div class="section-grid">
-            <div class="panel">
+          <div class="editor-shell">
+            <nav class="category-nav" aria-label="Editable categories">
+              <button type="button" class="category-tab active" data-section="money" onclick="showAdminSection('money')">Money <span>Basics</span></button>
+              <button type="button" class="category-tab" data-section="bank" onclick="showAdminSection('bank')">Bank <span>Defenses</span></button>
+              <button type="button" class="category-tab" data-section="jobs" onclick="showAdminSection('jobs')">Jobs <span>Work</span></button>
+              <button type="button" class="category-tab" data-section="inventory" onclick="showAdminSection('inventory')">Inventory <span>Items</span></button>
+              <button type="button" class="category-tab" data-section="pets" onclick="showAdminSection('pets')">Pets <span>Idle</span></button>
+              <button type="button" class="category-tab" data-section="boosts" onclick="showAdminSection('boosts')">Boosts <span>Timed</span></button>
+              <button type="button" class="category-tab" data-section="rigging" onclick="showAdminSection('rigging')">Rigging <span>Games</span></button>
+              <button type="button" class="category-tab" data-section="cooldowns" onclick="showAdminSection('cooldowns')">Cooldowns <span>Dates</span></button>
+            </nav>
+
+            <div class="section-body">
+            <div class="panel editor-section active" data-section="money">
               <div class="panel-head">
                 <div>
                   <div class="panel-kicker">Money</div>
@@ -601,7 +662,7 @@ function pageHtml() {
               </div>
             </div>
 
-            <div class="panel">
+            <div class="panel editor-section" data-section="bank">
               <div class="panel-head">
                 <div>
                   <div class="panel-kicker">Bank</div>
@@ -613,7 +674,32 @@ function pageHtml() {
               <div id="bankDefenses" class="row-list"></div>
             </div>
 
-            <div class="panel">
+            <div class="panel editor-section" data-section="jobs">
+              <div class="panel-head">
+                <div>
+                  <div class="panel-kicker">Jobs</div>
+                  <h2>Job Manager</h2>
+                  <p class="muted">Edit the player's job, promotions, fail streak, access, and apply cooldowns.</p>
+                </div>
+              </div>
+              <div class="grid-2">
+                <div><label>Current Job</label><select id="jobId" onchange="updateJobHints()"></select><span id="jobIdHint" class="hint"></span></div>
+                <div><label>Hired Date</label><input id="jobHiredAt" type="datetime-local"><span id="jobHiredAtHint" class="hint"></span></div>
+              </div>
+              <label class="inline-check"><input id="jobHighAccess" type="checkbox"> High-tier job access unlocked</label>
+              <div class="grid-3">
+                <div><label>Job XP</label><input id="jobXp" type="number" min="0"><span id="jobXpHint" class="hint"></span></div>
+                <div><label>Promotion Level</label><input id="jobLevel" type="number" min="1" max="5"><span id="jobLevelHint" class="hint"></span></div>
+                <div><label>Fail Streak</label><input id="jobFailStreak" type="number" min="0" max="3"><span id="jobFailStreakHint" class="hint"></span></div>
+              </div>
+              <div class="grid-3">
+                <div><label>Basic Apply Cooldown</label><input id="jobApplyBasic" type="datetime-local"><span id="jobApplyBasicHint" class="hint"></span></div>
+                <div><label>Medium Apply Cooldown</label><input id="jobApplyMedium" type="datetime-local"><span id="jobApplyMediumHint" class="hint"></span></div>
+                <div><label>High Apply Cooldown</label><input id="jobApplyHigh" type="datetime-local"><span id="jobApplyHighHint" class="hint"></span></div>
+              </div>
+            </div>
+
+            <div class="panel editor-section" data-section="inventory">
               <div class="panel-head">
                 <div>
                   <div class="panel-kicker">Items</div>
@@ -625,7 +711,7 @@ function pageHtml() {
               <div id="inventory" class="row-list"></div>
             </div>
 
-            <div class="panel">
+            <div class="panel editor-section" data-section="pets">
               <div class="panel-head">
                 <div>
                   <div class="panel-kicker">Pets</div>
@@ -640,7 +726,7 @@ function pageHtml() {
               <div id="pets"></div>
             </div>
 
-            <div class="panel">
+            <div class="panel editor-section" data-section="boosts">
               <div class="panel-head">
                 <div>
                   <div class="panel-kicker">Boosts</div>
@@ -652,7 +738,7 @@ function pageHtml() {
               <div id="boosts" class="row-list"></div>
             </div>
 
-            <div class="panel">
+            <div class="panel editor-section" data-section="rigging">
               <div class="panel-head">
                 <div>
                   <div class="panel-kicker">Rigging</div>
@@ -672,7 +758,7 @@ function pageHtml() {
               <div id="rigPreview" class="rig-card muted">No rig active.</div>
             </div>
 
-            <div class="panel wide">
+            <div class="panel editor-section" data-section="cooldowns">
               <div>
                 <div class="panel-kicker">Cooldowns</div>
                 <h2>Cooldown Timestamps</h2>
@@ -692,6 +778,7 @@ function pageHtml() {
                 <div><label>Give</label><input id="lastGive" type="datetime-local"><span id="lastGiveHint" class="hint"></span></div>
                 <div><label>Mine</label><input id="lastMine" type="datetime-local"><span id="lastMineHint" class="hint"></span></div>
               </div>
+            </div>
             </div>
           </div>
         </form>
@@ -739,10 +826,17 @@ function pageHtml() {
 <script>
 const numberFields = ["wallet","bank","bankLevel","experience"];
 const cooldownFields = ["lastBeg","lastWork","lastDaily","lastRob","lastBankrob","lastHunt","lastGive","lastMine"];
+const jobCooldownFields = [
+  ["basic", "jobApplyBasic"],
+  ["medium", "jobApplyMedium"],
+  ["high", "jobApplyHigh"]
+];
 let users = [];
 let items = [];
 let bankDefenseItems = [];
 let pets = [];
+let jobs = [];
+let jobRules = { promotionXp: 300, maxLevel: 5, failLimit: 3 };
 let boosts = [];
 let rigGames = [];
 let rigOutcomes = [];
@@ -814,12 +908,15 @@ async function boot() {
   items = meta.items;
   bankDefenseItems = meta.bankDefenses;
   pets = meta.pets;
+  jobs = meta.jobs;
+  jobRules = meta.jobRules || jobRules;
   boosts = meta.boosts;
   rigGames = meta.rigGames;
   rigOutcomes = meta.rigOutcomes;
   fillCategorySelect();
   filterItemSelect();
   fillSelect("petToAdd", pets);
+  fillJobSelect();
   fillSelect("boostToAdd", boosts);
   fillSelect("rigGame", rigGames);
   fillSelect("rigOutcome", rigOutcomes);
@@ -834,6 +931,27 @@ function fillSelectElement(select, rows) {
   select.innerHTML = rows.map((row) =>
     "<option value='" + row.id + "'>" + row.name + " (" + row.id + ")</option>"
   ).join("");
+}
+
+function fillJobSelect() {
+  const select = document.getElementById("jobId");
+  select.innerHTML = "<option value=''>No Job</option>" + jobs.map((job) =>
+    "<option value='" + job.id + "'>" + job.name + " - " + titleCase(job.tier) + " (" + job.id + ")</option>"
+  ).join("");
+}
+
+function showAdminSection(section) {
+  document.querySelectorAll(".editor-section").forEach((panel) => {
+    panel.classList.toggle("active", panel.dataset.section === section);
+  });
+  document.querySelectorAll(".category-tab").forEach((tab) => {
+    tab.classList.toggle("active", tab.dataset.section === section);
+  });
+}
+
+function titleCase(value) {
+  const text = String(value || "");
+  return text ? text.charAt(0).toUpperCase() + text.slice(1) : "";
 }
 
 function fillCategorySelect() {
@@ -920,6 +1038,7 @@ function showEditor(userId, user) {
   document.getElementById("editorTitle").textContent = userId ? (user.displayName ? user.displayName + " (" + userId + ")" : "User " + userId) : "New User";
   document.getElementById("editorSubtitle").textContent = userId ? "Editing live stored data for this Discord account." : "Create a new stored economy profile.";
   renderBankDefenses();
+  renderJobs(user);
   renderRig(user.rig || null);
   renderInventory(user.inventory || {});
   renderPets(user.pets || {}, user.equippedPet || null);
@@ -1015,6 +1134,53 @@ function boostName(boostId) {
 
 function petName(petId) {
   return pets.find((pet) => pet.id === petId)?.name || petId;
+}
+
+function jobName(jobId) {
+  return jobs.find((job) => job.id === jobId)?.name || jobId;
+}
+
+function getJobTier(jobId) {
+  return jobs.find((job) => job.id === jobId)?.tier || "none";
+}
+
+function getJobLevelFromXp(xp) {
+  return Math.min(jobRules.maxLevel || 5, Math.floor(Math.max(0, Number(xp) || 0) / (jobRules.promotionXp || 300)) + 1);
+}
+
+function renderJobs(user) {
+  const job = user.job || {};
+  const jobId = jobs.some((row) => row.id === job.id) ? job.id : "";
+  const xp = Math.max(0, Math.floor(Number(job.xp) || 0));
+  const level = Math.min(jobRules.maxLevel || 5, Math.max(1, Math.floor(Number(job.level) || getJobLevelFromXp(xp))));
+  document.getElementById("jobId").value = jobId;
+  document.getElementById("jobHighAccess").checked = Boolean(user.jobHighAccess);
+  document.getElementById("jobXp").value = xp;
+  document.getElementById("jobLevel").value = level;
+  document.getElementById("jobFailStreak").value = Math.min(jobRules.failLimit || 3, Math.max(0, Math.floor(Number(job.failStreak) || 0)));
+  document.getElementById("jobHiredAt").value = jobId && Number(job.hiredAt) > 0 ? toDateTimeLocal(job.hiredAt) : "";
+  const applyCooldowns = user.jobApplyCooldowns || {};
+  jobCooldownFields.forEach(([tier, id]) => {
+    document.getElementById(id).value = Number(applyCooldowns[tier]) > 0 ? toDateTimeLocal(applyCooldowns[tier]) : "";
+  });
+  updateJobHints();
+}
+
+function updateJobHints() {
+  const jobId = document.getElementById("jobId").value;
+  const xp = Math.max(0, Number(document.getElementById("jobXp").value) || 0);
+  const level = Math.min(jobRules.maxLevel || 5, Math.max(1, Number(document.getElementById("jobLevel").value) || getJobLevelFromXp(xp)));
+  const failStreak = Math.max(0, Number(document.getElementById("jobFailStreak").value) || 0);
+  const nextXp = level >= (jobRules.maxLevel || 5) ? null : level * (jobRules.promotionXp || 300);
+
+  document.getElementById("jobIdHint").textContent = jobId ? titleCase(getJobTier(jobId)) + " job: " + jobName(jobId) : "No current job";
+  document.getElementById("jobXpHint").textContent = formatNumber(xp) + " Job XP";
+  document.getElementById("jobLevelHint").textContent = nextXp === null ? "Max promotion" : "Next promotion at " + formatNumber(nextXp) + " Job XP";
+  document.getElementById("jobFailStreakHint").textContent = failStreak + " of " + (jobRules.failLimit || 3) + " fails before fired";
+  document.getElementById("jobHiredAtHint").textContent = formatTimestamp(document.getElementById("jobHiredAt").value);
+  jobCooldownFields.forEach(([tier, id]) => {
+    document.getElementById(id + "Hint").textContent = titleCase(tier) + ": " + formatTimestamp(document.getElementById(id).value);
+  });
 }
 
 function renderInventory(inventory) {
@@ -1237,6 +1403,27 @@ function collectUser() {
   const user = {};
   numberFields.forEach((field) => user[field] = Number(document.getElementById(field).value) || 0);
   cooldownFields.forEach((field) => user[field] = fromDateTimeLocal(document.getElementById(field).value));
+  const jobId = document.getElementById("jobId").value;
+  user.jobHighAccess = document.getElementById("jobHighAccess").checked;
+  user.jobApplyCooldowns = {};
+  jobCooldownFields.forEach(([tier, id]) => {
+    const timestamp = fromDateTimeLocal(document.getElementById(id).value);
+    if (timestamp > 0) user.jobApplyCooldowns[tier] = timestamp;
+  });
+  if (jobId) {
+    const requestedLevel = Math.min(jobRules.maxLevel || 5, Math.max(1, Math.floor(Number(document.getElementById("jobLevel").value) || 1)));
+    let xp = Math.max(0, Math.floor(Number(document.getElementById("jobXp").value) || 0));
+    if (getJobLevelFromXp(xp) !== requestedLevel) xp = (requestedLevel - 1) * (jobRules.promotionXp || 300);
+    user.job = {
+      id: jobId,
+      xp,
+      level: requestedLevel,
+      failStreak: Math.min(jobRules.failLimit || 3, Math.max(0, Math.floor(Number(document.getElementById("jobFailStreak").value) || 0))),
+      hiredAt: fromDateTimeLocal(document.getElementById("jobHiredAt").value) || Date.now()
+    };
+  } else {
+    user.job = null;
+  }
   user.bankDefenses = {};
   document.querySelectorAll(".defense-row").forEach((row) => {
     const itemId = row.querySelector(".defense-id").value;
@@ -1343,9 +1530,11 @@ applyTheme();
 boot().catch((error) => alert(error.message));
 document.addEventListener("change", (event) => {
   if (["rigEnabled", "rigGame", "rigOutcome", "rigHighlowRoll"].includes(event.target.id)) updateRigPreview();
+  if (["jobId","jobHiredAt","jobApplyBasic","jobApplyMedium","jobApplyHigh"].includes(event.target.id)) updateJobHints();
   if (numberFields.includes(event.target.id) || cooldownFields.includes(event.target.id)) updateHumanReadableHints();
 });
 document.addEventListener("input", (event) => {
+  if (["jobXp","jobLevel","jobFailStreak"].includes(event.target.id)) updateJobHints();
   if (numberFields.includes(event.target.id) || cooldownFields.includes(event.target.id) || event.target.classList.contains("item-quantity")) updateHumanReadableHints();
 });
 </script>
