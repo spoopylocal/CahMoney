@@ -12,6 +12,7 @@ const DEFAULT_USER = {
   inventory: {},
   job: null,
   jobHighAccess: false,
+  jobApplyCooldowns: {},
   pets: {},
   equippedPet: null,
   boosts: {},
@@ -234,6 +235,7 @@ function cleanUser(input) {
   user.inventory = source.inventory && typeof source.inventory === "object" && !Array.isArray(source.inventory) ? source.inventory : {};
   user.job = source.job && typeof source.job === "object" && !Array.isArray(source.job) ? source.job : null;
   user.jobHighAccess = Boolean(source.jobHighAccess);
+  user.jobApplyCooldowns = source.jobApplyCooldowns && typeof source.jobApplyCooldowns === "object" && !Array.isArray(source.jobApplyCooldowns) ? source.jobApplyCooldowns : {};
   user.pets = source.pets && typeof source.pets === "object" && !Array.isArray(source.pets) ? source.pets : {};
   user.equippedPet = source.equippedPet || null;
   user.boosts = source.boosts && typeof source.boosts === "object" && !Array.isArray(source.boosts) ? source.boosts : {};

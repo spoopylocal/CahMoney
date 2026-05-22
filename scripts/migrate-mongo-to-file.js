@@ -13,6 +13,7 @@ const DEFAULT_USER = {
   inventory: {},
   job: null,
   jobHighAccess: false,
+  jobApplyCooldowns: {},
   pets: {},
   equippedPet: null,
   boosts: {},

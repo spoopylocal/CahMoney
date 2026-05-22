@@ -29,6 +29,11 @@ const JOB_PROMOTION_XP = 300;
 const JOB_MAX_LEVEL = 5;
 const JOB_FAIL_LIMIT = 3;
 const MEDIUM_JOB_LEVEL = 10;
+const JOB_APPLY_COOLDOWNS = {
+  basic: 2 * 60 * 1000,
+  medium: 5 * 60 * 1000,
+  high: 10 * 60 * 1000
+};
 const PAGE_SIZE = 5;
 const DEV_USER_ID = "749345623785996489";
 const BANKROB_BASE_SUCCESS_CHANCE = 0.28;
@@ -1530,6 +1535,33 @@ function getUnlockedJobTiers(user) {
   return tiers;
 }
 
+function normalizeJobApplyCooldowns(user) {
+  user.jobApplyCooldowns ||= {};
+
+  for (const tier of Object.keys(JOB_APPLY_COOLDOWNS)) {
+    const timestamp = Math.max(0, Math.floor(Number(user.jobApplyCooldowns[tier]) || 0));
+    if (timestamp > 0) user.jobApplyCooldowns[tier] = timestamp;
+    else delete user.jobApplyCooldowns[tier];
+  }
+
+  return user.jobApplyCooldowns;
+}
+
+function getJobApplyCooldown(user, tier) {
+  const cooldowns = normalizeJobApplyCooldowns(user);
+  return getCooldown(cooldowns[tier] || 0, JOB_APPLY_COOLDOWNS[tier] || JOB_APPLY_COOLDOWNS.basic);
+}
+
+function formatJobApplyCooldowns(user) {
+  const cooldowns = normalizeJobApplyCooldowns(user);
+  return Object.entries(JOB_APPLY_COOLDOWNS)
+    .map(([tier, duration]) => {
+      const cooldown = getCooldown(cooldowns[tier] || 0, duration);
+      return `${jobTiers[tier].name}: ${cooldown || "Ready"}`;
+    })
+    .join("\n");
+}
+
 function formatJobProgress(job) {
   const next = getJobXpUntilNext(job);
   return next === null ? `Promotion ${JOB_MAX_LEVEL}/${JOB_MAX_LEVEL} | Max promotion` : `Promotion ${job.level}/${JOB_MAX_LEVEL} | ${next.toLocaleString()} Job XP to next`;
@@ -1554,6 +1586,7 @@ function makeJobsView(interaction, user, notice = null) {
     fields: [
       { name: "Current Job", value: currentText, inline: false },
       { name: "Unlocked Tiers", value: unlockedTiers.map((tier) => jobTiers[tier].name).join(", "), inline: true },
+      { name: "Apply Cooldowns", value: formatJobApplyCooldowns(user), inline: true },
       { name: "Locked", value: locked.length > 0 ? locked.join("\n") : "All tiers unlocked.", inline: true }
     ]
   });
@@ -1589,6 +1622,7 @@ function makeJobsComponents(customIdPrefix, user, disabled = false) {
 
 function applyForJob(interaction, user, tier) {
   normalizeJob(user);
+  normalizeJobApplyCooldowns(user);
   if (user.job) {
     return {
       title: "Already Employed",
@@ -1606,6 +1640,17 @@ function applyForJob(interaction, user, tier) {
       color: 0xed4245
     };
   }
+
+  const cooldown = getJobApplyCooldown(user, tier);
+  if (cooldown) {
+    return {
+      title: "Application Cooldown",
+      message: `${jobTiers[tier].name} applications are on cooldown. Try again in ${cooldown}.`,
+      color: 0xfee75c
+    };
+  }
+
+  user.jobApplyCooldowns[tier] = Date.now();
 
   const jobIds = jobIdsByTier[tier] || [];
   const jobId = jobIds[randomInt(0, jobIds.length - 1)];
