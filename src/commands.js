@@ -1545,8 +1545,11 @@ function makeJobsView(interaction, user, notice = null) {
   const currentText = job
     ? `Current job: **${jobDefinitions[job.id].name}**\n${formatJobProgress(job)}\nFail streak: ${job.failStreak}/${JOB_FAIL_LIMIT}`
     : "You do not have a job. Apply for one below.";
+  const description = job
+    ? `You are working as **${jobDefinitions[job.id].name}**. Use \`/work\` to start a shift.`
+    : "Apply for a job tier below. Higher tiers pay more, but are harder to get and punish mistakes harder.";
 
-  return makeEmbed(interaction, notice?.title || "Jobs", notice?.message || currentText, {
+  return makeEmbed(interaction, notice?.title || "Jobs", notice?.message || description, {
     color: notice?.color || 0x5865f2,
     fields: [
       { name: "Current Job", value: currentText, inline: false },
