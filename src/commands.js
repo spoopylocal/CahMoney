@@ -127,11 +127,31 @@ const jobDefinitions = {
     jobXpMin: 35,
     jobXpMax: 55,
     failFine: 150,
-    task: "A very dramatic dog refuses to cross the street. What do you do?",
-    choices: [
-      ["Treat", true],
-      ["Spreadsheet", false],
-      ["Lecture", false]
+    games: [
+      {
+        task: "A very dramatic dog refuses to cross the street. What do you do?",
+        choices: [
+          ["Treat", true],
+          ["Spreadsheet", false],
+          ["Lecture", false]
+        ]
+      },
+      {
+        task: "The leash gets tangled around a mailbox. What fixes the walk?",
+        choices: [
+          ["Untangle", true],
+          ["Sprint", false],
+          ["Bribe Mailbox", false]
+        ]
+      },
+      {
+        task: "The dog starts barking at a delivery bike. Pick the calm move.",
+        choices: [
+          ["Redirect", true],
+          ["Bark Back", false],
+          ["Hide", false]
+        ]
+      }
     ]
   },
   burger_cashier: {
@@ -143,11 +163,31 @@ const jobDefinitions = {
     jobXpMin: 40,
     jobXpMax: 60,
     failFine: 200,
-    task: "A customer asks for extra fries. Which button saves the shift?",
-    choices: [
-      ["Fries", true],
-      ["Beans", false],
-      ["Crown", false]
+    games: [
+      {
+        task: "A customer asks for extra fries. Which button saves the shift?",
+        choices: [
+          ["Fries", true],
+          ["Beans", false],
+          ["Crown", false]
+        ]
+      },
+      {
+        task: "The soda machine is foaming everywhere. What do you do first?",
+        choices: [
+          ["Shut Valve", true],
+          ["Add Burger", false],
+          ["Applaud", false]
+        ]
+      },
+      {
+        task: "An order says no pickles. Which tray goes out?",
+        choices: [
+          ["Plain Burger", true],
+          ["Pickle Stack", false],
+          ["Mystery Bag", false]
+        ]
+      }
     ]
   },
   mall_cop: {
@@ -159,11 +199,31 @@ const jobDefinitions = {
     jobXpMin: 45,
     jobXpMax: 65,
     failFine: 300,
-    task: "Someone is sprinting with unpaid boots. Pick the mall cop move.",
-    choices: [
-      ["Whistle", true],
-      ["Nap", false],
-      ["Receipt?", false]
+    games: [
+      {
+        task: "Someone is sprinting with unpaid boots. Pick the mall cop move.",
+        choices: [
+          ["Whistle", true],
+          ["Nap", false],
+          ["Receipt?", false]
+        ]
+      },
+      {
+        task: "A fountain is full of loose fries. What keeps the mall calm?",
+        choices: [
+          ["Block Area", true],
+          ["Dive In", false],
+          ["Ignore It", false]
+        ]
+      },
+      {
+        task: "A kiosk alarm starts beeping. What is the right response?",
+        choices: [
+          ["Check Kiosk", true],
+          ["Dance", false],
+          ["Unplug Mall", false]
+        ]
+      }
     ]
   },
   mechanic: {
@@ -175,11 +235,31 @@ const jobDefinitions = {
     jobXpMin: 55,
     jobXpMax: 80,
     failFine: 800,
-    task: "A car is making a deeply expensive noise. First tool?",
-    choices: [
-      ["Wrench", true],
-      ["Toco", false],
-      ["Crown", false]
+    games: [
+      {
+        task: "A car is making a deeply expensive noise. First tool?",
+        choices: [
+          ["Wrench", true],
+          ["Toco", false],
+          ["Crown", false]
+        ]
+      },
+      {
+        task: "The engine is overheating. What do you check?",
+        choices: [
+          ["Coolant", true],
+          ["Radio", false],
+          ["Cupholder", false]
+        ]
+      },
+      {
+        task: "A tire is losing air fast. Pick the useful fix.",
+        choices: [
+          ["Patch Tire", true],
+          ["Paint It", false],
+          ["Compliment It", false]
+        ]
+      }
     ]
   },
   security_tech: {
@@ -191,11 +271,31 @@ const jobDefinitions = {
     jobXpMin: 60,
     jobXpMax: 85,
     failFine: 1100,
-    task: "A laser grid is blinking angry red. What do you check?",
-    choices: [
-      ["Power", true],
-      ["Vibes", false],
-      ["Burger", false]
+    games: [
+      {
+        task: "A laser grid is blinking angry red. What do you check?",
+        choices: [
+          ["Power", true],
+          ["Vibes", false],
+          ["Burger", false]
+        ]
+      },
+      {
+        task: "An alarm keeps false-triggering at midnight. What is most likely?",
+        choices: [
+          ["Sensor Drift", true],
+          ["Ghost Mode", false],
+          ["Too Much Cheese", false]
+        ]
+      },
+      {
+        task: "A guard badge scanner denies everyone. What do you reset?",
+        choices: [
+          ["Access Panel", true],
+          ["Snack Machine", false],
+          ["Bank Level", false]
+        ]
+      }
     ]
   },
   accountant: {
@@ -207,11 +307,31 @@ const jobDefinitions = {
     jobXpMin: 65,
     jobXpMax: 90,
     failFine: 1400,
-    task: "The budget is off by one suspicious zero. Best response?",
-    choices: [
-      ["Audit", true],
-      ["Ignore", false],
-      ["Confetti", false]
+    games: [
+      {
+        task: "The budget is off by one suspicious zero. Best response?",
+        choices: [
+          ["Audit", true],
+          ["Ignore", false],
+          ["Confetti", false]
+        ]
+      },
+      {
+        task: "A receipt total does not match the ledger. What do you compare?",
+        choices: [
+          ["Line Items", true],
+          ["Lunch Menu", false],
+          ["Moon Phase", false]
+        ]
+      },
+      {
+        task: "Payroll is due in ten minutes. Which file matters?",
+        choices: [
+          ["Timesheets", true],
+          ["Memes", false],
+          ["Old CD", false]
+        ]
+      }
     ]
   },
   ceo: {
@@ -223,11 +343,31 @@ const jobDefinitions = {
     jobXpMin: 80,
     jobXpMax: 115,
     failFine: 6000,
-    task: "The board asks for a growth plan. Pick the executive answer.",
-    choices: [
-      ["Roadmap", true],
-      ["Pebble", false],
-      ["Panic", false]
+    games: [
+      {
+        task: "The board asks for a growth plan. Pick the executive answer.",
+        choices: [
+          ["Roadmap", true],
+          ["Pebble", false],
+          ["Panic", false]
+        ]
+      },
+      {
+        task: "A product launch is slipping. What keeps the team alive?",
+        choices: [
+          ["Prioritize", true],
+          ["Yell More", false],
+          ["Rename It", false]
+        ]
+      },
+      {
+        task: "Revenue is up but support is drowning. What do you fund?",
+        choices: [
+          ["Support Team", true],
+          ["Golden Chair", false],
+          ["Mystery Block", false]
+        ]
+      }
     ]
   },
   bank_consultant: {
@@ -239,11 +379,31 @@ const jobDefinitions = {
     jobXpMin: 90,
     jobXpMax: 125,
     failFine: 8500,
-    task: "A client wants more storage. What do you recommend?",
-    choices: [
-      ["Upgrade", true],
-      ["Robbery", false],
-      ["Dirt", false]
+    games: [
+      {
+        task: "A client wants more storage. What do you recommend?",
+        choices: [
+          ["Upgrade", true],
+          ["Robbery", false],
+          ["Dirt", false]
+        ]
+      },
+      {
+        task: "A vault has two empty defense slots. What should the client add?",
+        choices: [
+          ["Defenses", true],
+          ["Loose Fries", false],
+          ["Nothing", false]
+        ]
+      },
+      {
+        task: "A bank balance exceeds capacity. What is the professional answer?",
+        choices: [
+          ["Level Up Bank", true],
+          ["Stuff Wallet", false],
+          ["Delete Cash", false]
+        ]
+      }
     ]
   },
   venture_capitalist: {
@@ -255,11 +415,31 @@ const jobDefinitions = {
     jobXpMin: 100,
     jobXpMax: 140,
     failFine: 12000,
-    task: "A startup pitches edible CDs. Your move?",
-    choices: [
-      ["Due Diligence", true],
-      ["All In", false],
-      ["Eat CD", false]
+    games: [
+      {
+        task: "A startup pitches edible CDs. Your move?",
+        choices: [
+          ["Due Diligence", true],
+          ["All In", false],
+          ["Eat CD", false]
+        ]
+      },
+      {
+        task: "A founder claims infinite profit by Tuesday. What do you request?",
+        choices: [
+          ["Financials", true],
+          ["Vibes Only", false],
+          ["A Crown", false]
+        ]
+      },
+      {
+        task: "Two companies want funding. Which one gets a second meeting?",
+        choices: [
+          ["Real Customers", true],
+          ["No Product", false],
+          ["Only Logo", false]
+        ]
+      }
     ]
   }
 };
@@ -1685,9 +1865,14 @@ function shuffleRows(rows) {
 }
 
 function makeWorkChallenge(job) {
+  const games = Array.isArray(job.games) && job.games.length > 0
+    ? job.games
+    : [{ task: job.task, choices: job.choices }];
+  const game = games[randomInt(0, games.length - 1)];
+
   return {
-    prompt: job.task,
-    choices: shuffleRows(job.choices).map(([label, correct]) => ({ label, correct }))
+    prompt: game.task,
+    choices: shuffleRows(game.choices).map(([label, correct]) => ({ label, correct }))
   };
 }
 
