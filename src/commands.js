@@ -2452,6 +2452,101 @@ function makeInventoryComponents(interaction, customIdPrefix, page, totalPages, 
   return components;
 }
 
+function makeGiveRows(interaction, customIdPrefix, page, totalPages, entries) {
+  const components = makePagedRows(customIdPrefix, page, totalPages);
+  const visibleEntries = entries.slice(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE);
+
+  if (visibleEntries.length > 0) {
+    components.unshift(
+      new ActionRowBuilder().addComponents(
+        new StringSelectMenuBuilder()
+          .setCustomId(`${customIdPrefix}_item`)
+          .setPlaceholder("Give an item from this page")
+          .addOptions(
+            visibleEntries.map(([itemId, quantity]) => {
+              const item = itemById.get(itemId);
+              return {
+                label: item?.name || itemId,
+                description: `You have ${quantity.toLocaleString()}`,
+                value: itemId
+              };
+            })
+          )
+      )
+    );
+  }
+
+  components.push(
+    new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId(`${customIdPrefix}_coins`)
+        .setLabel("Give Coins")
+        .setStyle(ButtonStyle.Success),
+      new ButtonBuilder()
+        .setCustomId(`${customIdPrefix}_cancel`)
+        .setLabel("Close")
+        .setStyle(ButtonStyle.Secondary)
+    )
+  );
+
+  return components;
+}
+
+function makeTradeOfferText(interaction, trade, userId) {
+  const offer = trade.offers[userId] || { coins: 0, items: {} };
+  const lines = [];
+  if (offer.coins > 0) lines.push(formatMoney(interaction, offer.coins));
+
+  for (const [itemId, quantity] of Object.entries(offer.items || {})) {
+    if (quantity > 0) lines.push(formatItem(interaction, itemId, quantity));
+  }
+
+  return lines.length > 0 ? lines.join("\n") : "Nothing yet.";
+}
+
+function makeTradeEmbed(interaction, trade) {
+  return makeEmbed(interaction, "Trade Offer", `${trade.users[0].user} and ${trade.users[1].user} are trading. Add items or coins, then both players must accept.`, {
+    color: trade.closed ? 0x64748b : 0x5865f2,
+    fields: trade.users.map((player) => ({
+      name: `${player.user.username} ${trade.accepted[player.user.id] ? "(Accepted)" : "(Not Accepted)"}`,
+      value: makeTradeOfferText(interaction, trade, player.user.id),
+      inline: true
+    }))
+  });
+}
+
+function makeTradeRows(customIdPrefix, disabled = false) {
+  return [
+    new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId(`${customIdPrefix}_coins`)
+        .setLabel("Add Coins")
+        .setStyle(ButtonStyle.Success)
+        .setDisabled(disabled),
+      new ButtonBuilder()
+        .setCustomId(`${customIdPrefix}_item`)
+        .setLabel("Add Item")
+        .setStyle(ButtonStyle.Primary)
+        .setDisabled(disabled),
+      new ButtonBuilder()
+        .setCustomId(`${customIdPrefix}_clear`)
+        .setLabel("Clear Mine")
+        .setStyle(ButtonStyle.Secondary)
+        .setDisabled(disabled),
+      new ButtonBuilder()
+        .setCustomId(`${customIdPrefix}_accept`)
+        .setLabel("Accept")
+        .setStyle(ButtonStyle.Success)
+        .setDisabled(disabled),
+      new ButtonBuilder()
+        .setCustomId(`${customIdPrefix}_deny`)
+        .setLabel("Deny")
+        .setStyle(ButtonStyle.Danger)
+        .setDisabled(disabled)
+    )
+  ];
+}
+
 function getInventoryEntries(inventory) {
   return Object.entries(inventory || {}).filter(([, quantity]) => quantity > 0);
 }
@@ -3973,29 +4068,9 @@ const commands = [
       .setDescription("Give coins or an item to another user.")
       .addUserOption((option) =>
         option.setName("user").setDescription("User to give to.").setRequired(true)
-      )
-      .addStringOption((option) =>
-        option
-          .setName("type")
-          .setDescription("What you are giving.")
-          .setRequired(true)
-          .addChoices({ name: "Coins", value: "coins" }, { name: "Item", value: "item" })
-      )
-      .addIntegerOption((option) =>
-        option.setName("amount").setDescription("Amount to give.").setRequired(true).setMinValue(1)
-      )
-      .addStringOption((option) =>
-        option
-          .setName("item")
-          .setDescription("Item number, id, or name to give if type is Item.")
-          .setRequired(false)
       ),
     async execute(interaction) {
       const target = interaction.options.getUser("user");
-      const type = interaction.options.getString("type");
-      const amount = interaction.options.getInteger("amount");
-      const itemInput = interaction.options.getString("item");
-      const itemId = resolveItemId(itemInput);
 
       if (target.bot || target.id === interaction.user.id) {
         await replyEmbed(interaction, "Give Failed", "Pick a real target who is not you.", {
@@ -4004,84 +4079,409 @@ const commands = [
         return;
       }
 
-      const outcome = await withStore((store) => {
-        const giver = getUser(store, interaction.user.id);
-        const receiver = getUser(store, target.id);
-        const cooldown = getCooldown(giver.lastGive, GIVE_COOLDOWN);
+      let page = 0;
+      const customIdPrefix = `give_${interaction.id}`;
 
-        if (cooldown) {
+      async function getGiveState() {
+        return withStore((store) => {
+          const giver = getUser(store, interaction.user.id);
+          const entries = getInventoryEntries(giver.inventory).sort(([a], [b]) => a.localeCompare(b));
           return {
-            title: "Give Cooldown",
-            message: `Wait ${cooldown} before giving again.`,
-            color: 0xfee75c
+            wallet: giver.wallet || 0,
+            entries,
+            rows: makeInventoryRows(interaction, entries),
+            totalPages: getInventoryPageCount(entries),
+            cooldown: getCooldown(giver.lastGive, GIVE_COOLDOWN)
           };
-        }
+        });
+      }
 
-        if (type === "coins") {
-          if (amount > giver.wallet) {
-            return {
-              title: "Give Failed",
-              message: `You only have ${formatMoney(interaction, giver.wallet)} in your wallet.`,
-              color: 0xed4245
-            };
-          }
+      async function render(message = null) {
+        const state = await getGiveState();
+        page = Math.min(page, state.totalPages - 1);
+        const embed = makePagedEmbed(interaction, `Give to ${target.username}`, state.rows, page, {
+          emptyText: "No inventory items to give. You can still give coins.",
+          color: 0x5865f2
+        });
+        embed.spliceFields(0, 0,
+          { name: "Wallet", value: formatMoney(interaction, state.wallet), inline: true },
+          { name: "Cooldown", value: state.cooldown || "Ready", inline: true }
+        );
+        const payload = {
+          embeds: [embed],
+          components: makeGiveRows(interaction, customIdPrefix, page, state.totalPages, state.entries)
+        };
+
+        if (message) await message.edit(payload);
+        else await interaction.reply(payload);
+      }
+
+      async function giveCoins(amount) {
+        return withStore((store) => {
+          const giver = getUser(store, interaction.user.id);
+          const receiver = getUser(store, target.id);
+          const cooldown = getCooldown(giver.lastGive, GIVE_COOLDOWN);
+          if (cooldown) return { ok: false, title: "Give Cooldown", message: `Wait ${cooldown} before giving again.`, color: 0xfee75c };
+          if (amount > giver.wallet) return { ok: false, title: "Give Failed", message: `You only have ${formatMoney(interaction, giver.wallet)} in your wallet.`, color: 0xed4245 };
 
           giver.wallet -= amount;
           receiver.wallet += amount;
           giver.lastGive = Date.now();
+          return { ok: true, title: "Coins Given", message: `You gave ${target.username} ${formatMoney(interaction, amount)}.`, color: 0x57f287, coins: amount };
+        });
+      }
 
-          return {
-            title: "Coins Given",
-            message: `You gave ${target.username} ${formatMoney(interaction, amount)}.`,
-            color: 0x57f287,
-            coins: amount
-          };
+      async function giveItem(itemId, amount) {
+        return withStore((store) => {
+          const giver = getUser(store, interaction.user.id);
+          const receiver = getUser(store, target.id);
+          const cooldown = getCooldown(giver.lastGive, GIVE_COOLDOWN);
+          if (cooldown) return { ok: false, title: "Give Cooldown", message: `Wait ${cooldown} before giving again.`, color: 0xfee75c };
+          if (!itemById.has(itemId)) return { ok: false, title: "Give Failed", message: "That item does not exist.", color: 0xed4245 };
+          if (!removeItem(giver, itemId, amount)) return { ok: false, title: "Give Failed", message: `You do not have ${formatItem(interaction, itemId, amount)}.`, color: 0xed4245 };
+
+          addItem(receiver, itemId, amount);
+          giver.lastGive = Date.now();
+          return { ok: true, title: "Item Given", message: `You gave ${target.username} ${formatItem(interaction, itemId, amount)}.`, color: 0x57f287, itemId, amount };
+        });
+      }
+
+      await render();
+      const message = await interaction.fetchReply();
+      const collector = message.createMessageComponentCollector({ time: 2 * 60 * 1000 });
+
+      collector.on("collect", async (componentInteraction) => {
+        if (componentInteraction.user.id !== interaction.user.id) {
+          await componentInteraction.reply({ content: "This give menu is not yours.", ephemeral: true });
+          return;
         }
 
-        if (!itemId) {
-          return {
-            title: "Give Failed",
-            message: "Choose an item when giving item type.",
-            color: 0xed4245
-          };
+        if (componentInteraction.isButton()) {
+          const state = await getGiveState();
+          if (componentInteraction.customId.endsWith("_first")) page = 0;
+          if (componentInteraction.customId.endsWith("_prev")) page = Math.max(0, page - 1);
+          if (componentInteraction.customId.endsWith("_next")) page = Math.min(state.totalPages - 1, page + 1);
+          if (componentInteraction.customId.endsWith("_last")) page = state.totalPages - 1;
+
+          if (componentInteraction.customId.endsWith("_cancel")) {
+            collector.stop("closed");
+            await componentInteraction.update({ components: makeGiveRows(interaction, customIdPrefix, page, state.totalPages, state.entries).map((row) => {
+              row.components.forEach((component) => component.setDisabled(true));
+              return row;
+            }) });
+            return;
+          }
+
+          if (!componentInteraction.customId.endsWith("_coins")) {
+            await componentInteraction.deferUpdate();
+            await render(message);
+            return;
+          }
+
+          const modal = new ModalBuilder()
+            .setCustomId(`${customIdPrefix}_coins_modal`)
+            .setTitle(`Give coins to ${target.username}`);
+          modal.addComponents(new ActionRowBuilder().addComponents(
+            new TextInputBuilder()
+              .setCustomId("amount")
+              .setLabel("Coins to give")
+              .setRequired(true)
+              .setStyle(TextInputStyle.Short)
+          ));
+          await componentInteraction.showModal(modal);
+
+          try {
+            const modalInteraction = await componentInteraction.awaitModalSubmit({
+              time: 60 * 1000,
+              filter: (submitInteraction) => submitInteraction.user.id === interaction.user.id && submitInteraction.customId === `${customIdPrefix}_coins_modal`
+            });
+            const amount = Number.parseInt(modalInteraction.fields.getTextInputValue("amount").trim(), 10);
+            const outcome = Number.isFinite(amount) && amount > 0
+              ? await giveCoins(amount)
+              : { title: "Give Failed", message: "Enter a positive number.", color: 0xed4245 };
+            await modalInteraction.reply({ embeds: [makeEmbed(interaction, outcome.title, outcome.message, { color: outcome.color })], ephemeral: true });
+            await render(message);
+          } catch {
+            await render(message);
+          }
+          return;
         }
 
-        const item = itemById.get(itemId);
+        if (!componentInteraction.isStringSelectMenu()) return;
+        const itemId = componentInteraction.values[0];
+        const modal = new ModalBuilder()
+          .setCustomId(`${customIdPrefix}_item_modal_${itemId}`)
+          .setTitle(`Give ${itemById.get(itemId)?.name || itemId}`);
+        modal.addComponents(new ActionRowBuilder().addComponents(
+          new TextInputBuilder()
+            .setCustomId("amount")
+            .setLabel("Amount to give")
+            .setPlaceholder("Type a number, or all")
+            .setRequired(true)
+            .setStyle(TextInputStyle.Short)
+        ));
+        await componentInteraction.showModal(modal);
 
-        if (!item) {
-          return {
-            title: "Give Failed",
-            message: "That item does not exist. Try using the number shown in `/inventory`.",
-            color: 0xed4245
-          };
+        try {
+          const modalInteraction = await componentInteraction.awaitModalSubmit({
+            time: 60 * 1000,
+            filter: (submitInteraction) => submitInteraction.user.id === interaction.user.id && submitInteraction.customId === `${customIdPrefix}_item_modal_${itemId}`
+          });
+          const rawAmount = modalInteraction.fields.getTextInputValue("amount").trim().toLowerCase();
+          const state = await getGiveState();
+          const owned = state.entries.find(([id]) => id === itemId)?.[1] || 0;
+          const amount = rawAmount === "all" ? owned : Number.parseInt(rawAmount, 10);
+          const outcome = Number.isFinite(amount) && amount > 0
+            ? await giveItem(itemId, amount)
+            : { title: "Give Failed", message: "Enter a positive number or `all`.", color: 0xed4245 };
+          await modalInteraction.reply({ embeds: [makeEmbed(interaction, outcome.title, outcome.message, { color: outcome.color })], ephemeral: true });
+          await render(message);
+        } catch {
+          await render(message);
         }
-
-        if (!removeItem(giver, itemId, amount)) {
-          return {
-            title: "Give Failed",
-            message: `You do not have ${formatItem(interaction, itemId, amount)}.`,
-            color: 0xed4245
-          };
-        }
-
-        addItem(receiver, itemId, amount);
-        giver.lastGive = Date.now();
-
-        return {
-          title: "Item Given",
-          message: `You gave ${target.username} ${formatItem(interaction, itemId, amount)}.`,
-          color: 0x57f287,
-          itemId,
-          amount
-        };
       });
 
-      await replyEmbed(interaction, outcome.title, outcome.message, {
-        color: outcome.color,
-        fields: [
-          ...(outcome.coins ? [{ name: "Coins Given", value: formatMoney(interaction, outcome.coins), inline: true }] : []),
-          ...(outcome.itemId ? [{ name: "Item Given", value: formatItem(interaction, outcome.itemId, outcome.amount), inline: true }] : [])
-        ]
+      collector.on("end", async () => {
+        const state = await getGiveState();
+        const disabledComponents = makeGiveRows(interaction, customIdPrefix, page, state.totalPages, state.entries);
+        for (const row of disabledComponents) row.components.forEach((component) => component.setDisabled(true));
+        await message.edit({ components: disabledComponents }).catch(() => {});
+      });
+    }
+  },
+  {
+    data: new SlashCommandBuilder()
+      .setName("trade")
+      .setDescription("Start a two-player trade with coins and items.")
+      .addUserOption((option) =>
+        option.setName("user").setDescription("User to trade with.").setRequired(true)
+      ),
+    async execute(interaction) {
+      const target = interaction.options.getUser("user");
+
+      if (target.bot || target.id === interaction.user.id) {
+        await replyEmbed(interaction, "Trade Failed", "Pick a real target who is not you.", {
+          color: 0xed4245
+        });
+        return;
+      }
+
+      const customIdPrefix = `trade_${interaction.id}`;
+      const trade = {
+        users: [
+          { id: interaction.user.id, user: interaction.user },
+          { id: target.id, user: target }
+        ],
+        offers: {
+          [interaction.user.id]: { coins: 0, items: {} },
+          [target.id]: { coins: 0, items: {} }
+        },
+        accepted: {
+          [interaction.user.id]: false,
+          [target.id]: false
+        },
+        closed: false
+      };
+
+      function resetAccepts() {
+        trade.accepted[interaction.user.id] = false;
+        trade.accepted[target.id] = false;
+      }
+
+      async function renderTrade(message, disabled = false) {
+        await message.edit({
+          embeds: [makeTradeEmbed(interaction, trade)],
+          components: makeTradeRows(customIdPrefix, disabled)
+        });
+      }
+
+      function validateOffer(user, offer) {
+        if ((offer.coins || 0) > (user.wallet || 0)) {
+          return `You only have ${formatMoney(interaction, user.wallet || 0)} in your wallet.`;
+        }
+
+        for (const [itemId, quantity] of Object.entries(offer.items || {})) {
+          if ((user.inventory?.[itemId] || 0) < quantity) {
+            return `You only have ${formatItem(interaction, itemId, user.inventory?.[itemId] || 0)}.`;
+          }
+        }
+
+        return null;
+      }
+
+      function finishTrade() {
+        return withStore((store) => {
+          const first = getUser(store, interaction.user.id);
+          const second = getUser(store, target.id);
+          const firstIssue = validateOffer(first, trade.offers[interaction.user.id]);
+          if (firstIssue) return { ok: false, message: `${interaction.user.username}: ${firstIssue}` };
+          const secondIssue = validateOffer(second, trade.offers[target.id]);
+          if (secondIssue) return { ok: false, message: `${target.username}: ${secondIssue}` };
+
+          const firstOffer = trade.offers[interaction.user.id];
+          const secondOffer = trade.offers[target.id];
+          first.wallet -= firstOffer.coins || 0;
+          second.wallet += firstOffer.coins || 0;
+          second.wallet -= secondOffer.coins || 0;
+          first.wallet += secondOffer.coins || 0;
+
+          for (const [itemId, quantity] of Object.entries(firstOffer.items || {})) {
+            removeItem(first, itemId, quantity);
+            addItem(second, itemId, quantity);
+          }
+
+          for (const [itemId, quantity] of Object.entries(secondOffer.items || {})) {
+            removeItem(second, itemId, quantity);
+            addItem(first, itemId, quantity);
+          }
+
+          return { ok: true, message: "Trade completed." };
+        });
+      }
+
+      await interaction.reply({
+        embeds: [makeTradeEmbed(interaction, trade)],
+        components: makeTradeRows(customIdPrefix)
+      });
+
+      const message = await interaction.fetchReply();
+      const collector = message.createMessageComponentCollector({
+        componentType: ComponentType.Button,
+        time: 5 * 60 * 1000
+      });
+
+      collector.on("collect", async (buttonInteraction) => {
+        const participant = trade.users.find((user) => user.id === buttonInteraction.user.id);
+        if (!participant) {
+          await buttonInteraction.reply({ content: "You are not part of this trade.", ephemeral: true });
+          return;
+        }
+
+        const action = buttonInteraction.customId.replace(`${customIdPrefix}_`, "");
+
+        if (action === "deny") {
+          trade.closed = true;
+          collector.stop("denied");
+          await buttonInteraction.update({
+            embeds: [makeEmbed(interaction, "Trade Cancelled", `${buttonInteraction.user.username} denied the trade.`, { color: 0xed4245 })],
+            components: makeTradeRows(customIdPrefix, true)
+          });
+          return;
+        }
+
+        if (action === "accept") {
+          trade.accepted[buttonInteraction.user.id] = true;
+
+          if (trade.accepted[interaction.user.id] && trade.accepted[target.id]) {
+            const outcome = await finishTrade();
+            trade.closed = true;
+            collector.stop(outcome.ok ? "completed" : "failed");
+            await buttonInteraction.update({
+              embeds: [
+                outcome.ok
+                  ? makeEmbed(interaction, "Trade Complete", outcome.message, { color: 0x57f287 })
+                  : makeEmbed(interaction, "Trade Failed", outcome.message, { color: 0xed4245 })
+              ],
+              components: makeTradeRows(customIdPrefix, true)
+            });
+            return;
+          }
+
+          await buttonInteraction.update({
+            embeds: [makeTradeEmbed(interaction, trade)],
+            components: makeTradeRows(customIdPrefix)
+          });
+          return;
+        }
+
+        if (action === "clear") {
+          trade.offers[buttonInteraction.user.id] = { coins: 0, items: {} };
+          resetAccepts();
+          await buttonInteraction.update({
+            embeds: [makeTradeEmbed(interaction, trade)],
+            components: makeTradeRows(customIdPrefix)
+          });
+          return;
+        }
+
+        const modal = new ModalBuilder()
+          .setCustomId(`${customIdPrefix}_modal_${action}_${buttonInteraction.user.id}`)
+          .setTitle(action === "coins" ? "Add coins to trade" : "Add item to trade");
+
+        if (action === "coins") {
+          modal.addComponents(new ActionRowBuilder().addComponents(
+            new TextInputBuilder()
+              .setCustomId("amount")
+              .setLabel("Coins to offer")
+              .setRequired(true)
+              .setStyle(TextInputStyle.Short)
+          ));
+        } else {
+          modal.addComponents(
+            new ActionRowBuilder().addComponents(
+              new TextInputBuilder()
+                .setCustomId("item")
+                .setLabel("Item number, id, or name")
+                .setRequired(true)
+                .setStyle(TextInputStyle.Short)
+            ),
+            new ActionRowBuilder().addComponents(
+              new TextInputBuilder()
+                .setCustomId("amount")
+                .setLabel("Amount to offer")
+                .setRequired(true)
+                .setStyle(TextInputStyle.Short)
+            )
+          );
+        }
+
+        await buttonInteraction.showModal(modal);
+
+        try {
+          const modalInteraction = await buttonInteraction.awaitModalSubmit({
+            time: 60 * 1000,
+            filter: (submitInteraction) =>
+              submitInteraction.user.id === buttonInteraction.user.id &&
+              submitInteraction.customId === `${customIdPrefix}_modal_${action}_${buttonInteraction.user.id}`
+          });
+          const offer = trade.offers[buttonInteraction.user.id];
+
+          if (action === "coins") {
+            const amount = Number.parseInt(modalInteraction.fields.getTextInputValue("amount").trim(), 10);
+            if (!Number.isFinite(amount) || amount < 0) {
+              await modalInteraction.reply({ content: "Enter 0 or a positive number.", ephemeral: true });
+              return;
+            }
+            offer.coins = amount;
+          } else {
+            const itemId = resolveItemId(modalInteraction.fields.getTextInputValue("item"));
+            const amount = Number.parseInt(modalInteraction.fields.getTextInputValue("amount").trim(), 10);
+            if (!itemId || !itemById.has(itemId)) {
+              await modalInteraction.reply({ content: "That item does not exist.", ephemeral: true });
+              return;
+            }
+            if (!Number.isFinite(amount) || amount <= 0) {
+              await modalInteraction.reply({ content: "Enter a positive item amount.", ephemeral: true });
+              return;
+            }
+            offer.items[itemId] = (offer.items[itemId] || 0) + amount;
+          }
+
+          resetAccepts();
+          await modalInteraction.reply({ content: "Trade offer updated.", ephemeral: true });
+          await renderTrade(message);
+        } catch {
+          await renderTrade(message);
+        }
+      });
+
+      collector.on("end", async (_collected, reason) => {
+        if (["completed", "failed", "denied"].includes(reason)) return;
+        trade.closed = true;
+        await message.edit({
+          embeds: [makeEmbed(interaction, "Trade Expired", "The trade timed out before both players accepted.", { color: 0xfee75c })],
+          components: makeTradeRows(customIdPrefix, true)
+        }).catch(() => {});
       });
     }
   },
