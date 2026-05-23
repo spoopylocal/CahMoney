@@ -2547,6 +2547,23 @@ function makeTradeRows(customIdPrefix, disabled = false) {
   ];
 }
 
+function makeTradeRequestRows(customIdPrefix, disabled = false) {
+  return [
+    new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId(`${customIdPrefix}_request_accept`)
+        .setLabel("Accept Trade")
+        .setStyle(ButtonStyle.Success)
+        .setDisabled(disabled),
+      new ButtonBuilder()
+        .setCustomId(`${customIdPrefix}_request_deny`)
+        .setLabel("Deny")
+        .setStyle(ButtonStyle.Danger)
+        .setDisabled(disabled)
+    )
+  ];
+}
+
 function getInventoryEntries(inventory) {
   return Object.entries(inventory || {}).filter(([, quantity]) => quantity > 0);
 }
@@ -4340,43 +4357,78 @@ const commands = [
       }
 
       await interaction.reply({
-        embeds: [makeTradeEmbed(interaction, trade)],
-        components: makeTradeRows(customIdPrefix)
+        content: `${target}`,
+        embeds: [
+          makeEmbed(interaction, "Trade Request", `${interaction.user} wants to trade with ${target}.\n\n${target}, accept to open the trade window.`, {
+            color: 0x5865f2
+          })
+        ],
+        components: makeTradeRequestRows(customIdPrefix)
       });
 
-      const message = await interaction.fetchReply();
-      const collector = message.createMessageComponentCollector({
+      const requestMessage = await interaction.fetchReply();
+      const requestCollector = requestMessage.createMessageComponentCollector({
         componentType: ComponentType.Button,
-        time: 5 * 60 * 1000
+        time: 60 * 1000
       });
 
-      collector.on("collect", async (buttonInteraction) => {
-        const participant = trade.users.find((user) => user.id === buttonInteraction.user.id);
-        if (!participant) {
-          await buttonInteraction.reply({ content: "You are not part of this trade.", ephemeral: true });
+      requestCollector.on("collect", async (buttonInteraction) => {
+        if (buttonInteraction.user.id !== target.id) {
+          await buttonInteraction.reply({ content: "Only the requested player can answer this trade request.", ephemeral: true });
           return;
         }
 
-        const action = buttonInteraction.customId.replace(`${customIdPrefix}_`, "");
+        if (buttonInteraction.customId.endsWith("_request_deny")) {
+          trade.closed = true;
+          requestCollector.stop("denied");
+          await buttonInteraction.update({
+            content: "",
+            embeds: [makeEmbed(interaction, "Trade Request Denied", `${target.username} denied the trade request.`, { color: 0xed4245 })],
+            components: makeTradeRequestRows(customIdPrefix, true)
+          });
+          return;
+        }
+
+        await buttonInteraction.update({
+          content: "",
+          embeds: [makeTradeEmbed(interaction, trade)],
+          components: makeTradeRows(customIdPrefix)
+        });
+        requestCollector.stop("accepted");
+
+        const message = requestMessage;
+        const collector = message.createMessageComponentCollector({
+          componentType: ComponentType.Button,
+          time: 5 * 60 * 1000
+        });
+
+        collector.on("collect", async (tradeInteraction) => {
+          const participant = trade.users.find((user) => user.id === tradeInteraction.user.id);
+          if (!participant) {
+            await tradeInteraction.reply({ content: "You are not part of this trade.", ephemeral: true });
+            return;
+          }
+
+          const action = tradeInteraction.customId.replace(`${customIdPrefix}_`, "");
 
         if (action === "deny") {
           trade.closed = true;
           collector.stop("denied");
-          await buttonInteraction.update({
-            embeds: [makeEmbed(interaction, "Trade Cancelled", `${buttonInteraction.user.username} denied the trade.`, { color: 0xed4245 })],
+          await tradeInteraction.update({
+            embeds: [makeEmbed(interaction, "Trade Cancelled", `${tradeInteraction.user.username} denied the trade.`, { color: 0xed4245 })],
             components: makeTradeRows(customIdPrefix, true)
           });
           return;
         }
 
         if (action === "accept") {
-          trade.accepted[buttonInteraction.user.id] = true;
+          trade.accepted[tradeInteraction.user.id] = true;
 
           if (trade.accepted[interaction.user.id] && trade.accepted[target.id]) {
             const outcome = await finishTrade();
             trade.closed = true;
             collector.stop(outcome.ok ? "completed" : "failed");
-            await buttonInteraction.update({
+            await tradeInteraction.update({
               embeds: [
                 outcome.ok
                   ? makeEmbed(interaction, "Trade Complete", outcome.message, { color: 0x57f287 })
@@ -4387,7 +4439,7 @@ const commands = [
             return;
           }
 
-          await buttonInteraction.update({
+          await tradeInteraction.update({
             embeds: [makeTradeEmbed(interaction, trade)],
             components: makeTradeRows(customIdPrefix)
           });
@@ -4395,9 +4447,9 @@ const commands = [
         }
 
         if (action === "clear") {
-          trade.offers[buttonInteraction.user.id] = { coins: 0, items: {} };
+          trade.offers[tradeInteraction.user.id] = { coins: 0, items: {} };
           resetAccepts();
-          await buttonInteraction.update({
+          await tradeInteraction.update({
             embeds: [makeTradeEmbed(interaction, trade)],
             components: makeTradeRows(customIdPrefix)
           });
@@ -4405,7 +4457,7 @@ const commands = [
         }
 
         const modal = new ModalBuilder()
-          .setCustomId(`${customIdPrefix}_modal_${action}_${buttonInteraction.user.id}`)
+          .setCustomId(`${customIdPrefix}_modal_${action}_${tradeInteraction.user.id}`)
           .setTitle(action === "coins" ? "Add coins to trade" : "Add item to trade");
 
         if (action === "coins") {
@@ -4435,16 +4487,16 @@ const commands = [
           );
         }
 
-        await buttonInteraction.showModal(modal);
+        await tradeInteraction.showModal(modal);
 
         try {
-          const modalInteraction = await buttonInteraction.awaitModalSubmit({
+          const modalInteraction = await tradeInteraction.awaitModalSubmit({
             time: 60 * 1000,
             filter: (submitInteraction) =>
-              submitInteraction.user.id === buttonInteraction.user.id &&
-              submitInteraction.customId === `${customIdPrefix}_modal_${action}_${buttonInteraction.user.id}`
+              submitInteraction.user.id === tradeInteraction.user.id &&
+              submitInteraction.customId === `${customIdPrefix}_modal_${action}_${tradeInteraction.user.id}`
           });
-          const offer = trade.offers[buttonInteraction.user.id];
+          const offer = trade.offers[tradeInteraction.user.id];
 
           if (action === "coins") {
             const amount = Number.parseInt(modalInteraction.fields.getTextInputValue("amount").trim(), 10);
@@ -4473,14 +4525,25 @@ const commands = [
         } catch {
           await renderTrade(message);
         }
+        });
+
+        collector.on("end", async (_collected, reason) => {
+          if (["completed", "failed", "denied"].includes(reason)) return;
+          trade.closed = true;
+          await message.edit({
+            embeds: [makeEmbed(interaction, "Trade Expired", "The trade timed out before both players accepted.", { color: 0xfee75c })],
+            components: makeTradeRows(customIdPrefix, true)
+          }).catch(() => {});
+        });
       });
 
-      collector.on("end", async (_collected, reason) => {
-        if (["completed", "failed", "denied"].includes(reason)) return;
+      requestCollector.on("end", async (_collected, reason) => {
+        if (["accepted", "denied"].includes(reason)) return;
         trade.closed = true;
-        await message.edit({
-          embeds: [makeEmbed(interaction, "Trade Expired", "The trade timed out before both players accepted.", { color: 0xfee75c })],
-          components: makeTradeRows(customIdPrefix, true)
+        await requestMessage.edit({
+          content: "",
+          embeds: [makeEmbed(interaction, "Trade Request Expired", `${target.username} did not answer the trade request.`, { color: 0xfee75c })],
+          components: makeTradeRequestRows(customIdPrefix, true)
         }).catch(() => {});
       });
     }
