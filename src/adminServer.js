@@ -1,4 +1,5 @@
 const http = require("node:http");
+const crypto = require("node:crypto");
 const { URL } = require("node:url");
 const { config } = require("./config");
 const { getUser, withStore } = require("./economyStore");
@@ -222,7 +223,11 @@ function send(res, status, body, type = "application/json") {
 }
 
 function isAuthorized(req) {
-  return (req.headers.authorization || "") === `Bearer ${config.adminToken}`;
+  if (!config.adminToken) return false;
+  const provided = Buffer.from(req.headers.authorization || "");
+  const expected = Buffer.from(`Bearer ${config.adminToken}`);
+  // Length guard first (timingSafeEqual throws on mismatch), then constant-time compare.
+  return provided.length === expected.length && crypto.timingSafeEqual(provided, expected);
 }
 
 async function readBody(req) {
@@ -446,1098 +451,630 @@ async function handleApi(req, res, pathname) {
 }
 
 function pageHtml() {
+  // Single self-contained page: capability tabs on the left, editor on the right.
+  // Client JS deliberately avoids template literals so this whole HTML can live
+  // inside one server-side template string without escaping headaches.
   return `<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>CahMoney Admin</title>
+  <title>CahMoney Admin Console</title>
   <style>
     :root {
-      --bg: #eef2f7;
-      --surface: #ffffff;
-      --surface-2: #f8fafc;
-      --surface-3: #eef4ff;
-      --text: #152033;
-      --muted: #667085;
-      --border: #d5deeb;
-      --primary: #2563eb;
-      --primary-strong: #1d4ed8;
-      --danger: #dc2626;
-      --success: #15803d;
-      --warning: #b45309;
-      --shadow: 0 14px 36px rgba(15, 23, 42, 0.08);
-    }
-    body.dark {
-      --bg: #0d1117;
-      --surface: #151b23;
-      --surface-2: #0f1620;
-      --surface-3: #122238;
-      --text: #e5edf7;
-      --muted: #96a3b4;
-      --border: #2b3544;
-      --primary: #3b82f6;
-      --primary-strong: #60a5fa;
-      --danger: #ef4444;
-      --success: #22c55e;
-      --warning: #f59e0b;
-      --shadow: none;
+      --bg: #0f1115; --surface: #171a21; --surface-2: #1f2430; --surface-3: #262c3a;
+      --border: #2c3342; --text: #e6e9ef; --muted: #98a1b3; --accent: #5865f2;
+      --accent-2: #57f287; --danger: #ed4245; --warn: #fee75c; --radius: 12px;
     }
     * { box-sizing: border-box; }
-    body { margin: 0; font-family: Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Arial, sans-serif; color: var(--text); background: var(--bg); }
-    header { min-height: 68px; padding: 0 24px; background: var(--surface); border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; gap: 16px; position: sticky; top: 0; z-index: 2; }
-    main { display: grid; grid-template-columns: minmax(300px, 370px) 1fr; min-height: calc(100vh - 68px); }
-    aside { border-right: 1px solid var(--border); background: var(--surface); padding: 18px; overflow: auto; }
-    section { padding: 20px; overflow: auto; }
-    h1, h2, h3 { margin: 0; }
-    h1 { font-size: 28px; letter-spacing: 0; }
-    h2 { font-size: 19px; letter-spacing: 0; }
-    h3 { font-size: 16px; letter-spacing: 0; }
-    input, textarea, select, button { font: inherit; }
-    input, textarea, select { width: 100%; border: 1px solid var(--border); border-radius: 8px; padding: 10px 11px; color: var(--text); background: var(--surface-2); }
-    input:focus, textarea:focus, select:focus { outline: 2px solid rgba(37, 99, 235, 0.2); border-color: var(--primary); }
-    textarea { min-height: 120px; font-family: Consolas, monospace; }
-    button { border: 0; border-radius: 8px; padding: 10px 13px; cursor: pointer; background: var(--primary); color: white; white-space: nowrap; font-weight: 700; }
-    button:hover { background: var(--primary-strong); }
-    button.secondary { background: #64748b; }
-    button.danger { background: var(--danger); }
-    label { display: block; font-size: 12px; color: var(--muted); margin: 0 0 6px; }
-    dialog { border: 1px solid var(--border); border-radius: 10px; background: var(--surface); color: var(--text); width: min(460px, calc(100vw - 32px)); }
-    dialog::backdrop { background: rgba(0, 0, 0, 0.45); }
-    .brand { display: flex; flex-direction: column; gap: 2px; }
-    .brand span { color: var(--muted); font-size: 13px; }
-    .toolbar, .bar { display: flex; gap: 8px; align-items: center; }
-    .panel { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 16px; margin-bottom: 16px; box-shadow: var(--shadow); }
-    .panel-head { display: flex; justify-content: space-between; gap: 12px; align-items: center; margin-bottom: 14px; }
-    .panel-kicker { color: var(--muted); font-size: 12px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; margin-bottom: 5px; }
-    .editor-top { display: grid; grid-template-columns: 1fr auto; align-items: start; gap: 16px; }
-    .editor-actions { display: flex; gap: 8px; align-items: center; justify-content: flex-end; flex-wrap: wrap; }
-    .summary-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-top: 14px; }
-    .stat-card { border: 1px solid var(--border); border-radius: 8px; background: var(--surface-2); padding: 12px; min-width: 0; }
-    .stat-card span { display: block; color: var(--muted); font-size: 12px; margin-bottom: 4px; }
-    .stat-card strong { display: block; font-size: 18px; overflow-wrap: anywhere; }
-    .grid-3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-bottom: 12px; }
-    .grid-2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-bottom: 12px; }
-    .user { border: 1px solid var(--border); border-radius: 8px; padding: 12px; margin-bottom: 9px; cursor: pointer; background: var(--surface-2); }
-    .user:hover, .user.active { border-color: var(--primary); background: var(--surface-3); }
-    .user strong { display: block; margin-bottom: 5px; }
-    .user-stats { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 9px; }
-    .search-block { display: grid; grid-template-columns: 1fr auto; gap: 8px; margin: 12px 0; }
+    body { margin: 0; font-family: "Segoe UI", system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text); }
+    header.topbar { display: flex; align-items: center; gap: 14px; padding: 14px 20px; border-bottom: 1px solid var(--border); background: var(--surface); position: sticky; top: 0; z-index: 20; }
+    header.topbar h1 { font-size: 17px; margin: 0; letter-spacing: .3px; }
+    header.topbar .coin { color: var(--accent-2); }
+    header.topbar .spacer { flex: 1; }
     .muted { color: var(--muted); font-size: 13px; }
-    .hint { display: block; color: var(--muted); font-size: 12px; margin-top: 5px; min-height: 15px; }
-    .hidden { display: none !important; }
-    .empty { min-height: 280px; display: grid; place-content: center; text-align: center; }
-    .pill { border: 1px solid var(--border); border-radius: 999px; padding: 5px 9px; color: var(--muted); font-size: 12px; background: var(--surface-2); }
-    .pill.good { color: var(--success); border-color: rgba(21, 128, 61, 0.25); }
-    .pill.warn { color: var(--warning); border-color: rgba(180, 83, 9, 0.28); }
-    .rig-card { border: 1px solid var(--border); border-radius: 8px; padding: 12px; background: var(--surface-2); margin-top: 12px; }
-    .row-list { display: grid; gap: 8px; }
-    .inventory-row, .boost-row, .defense-row, .stash-row { display: grid; grid-template-columns: 1fr 120px 42px; gap: 8px; align-items: center; border: 1px solid var(--border); border-radius: 8px; padding: 10px; background: var(--surface-2); }
-    .boost-row { grid-template-columns: 1fr 190px 42px; }
-    .defense-row { grid-template-columns: 1fr 100px 42px; }
-    .stash-row { grid-template-columns: 1fr 100px 42px; padding: 8px; }
-    .pet-row { border: 1px solid var(--border); border-radius: 8px; padding: 12px; background: var(--surface-2); margin-bottom: 10px; }
-    .pet-row-head { display: flex; justify-content: space-between; gap: 12px; align-items: center; margin-bottom: 10px; }
-    .pet-advanced { margin-top: 10px; }
-    .pet-json { min-height: 76px; margin-top: 8px; }
-    .defense-list { display: flex; flex-wrap: wrap; gap: 8px; }
-    .stack { display: grid; gap: 8px; }
-    .editor-shell { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 16px; align-items: start; }
-    .category-nav { position: sticky; top: 88px; display: grid; gap: 8px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 10px; box-shadow: var(--shadow); }
-    .category-tab { width: 100%; display: flex; justify-content: space-between; align-items: center; gap: 8px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text); text-align: left; }
-    .category-tab:hover, .category-tab.active { border-color: var(--primary); background: var(--surface-3); color: var(--primary-strong); }
-    .section-body { min-width: 0; }
-    .editor-section { display: none; }
-    .editor-section.active { display: block; }
-    .inline-check { display: flex; gap: 8px; align-items: center; color: var(--text); font-size: 14px; margin-bottom: 12px; }
-    .inline-check input { width: auto; margin: 0; }
-    .wide { grid-column: 1 / -1; }
-    #login { max-width: 430px; margin: 80px auto; }
-    #status { min-height: 18px; }
-    @media (max-width: 1100px) {
-      .editor-shell { grid-template-columns: 1fr; }
-      .category-nav { position: static; grid-template-columns: repeat(4, minmax(0, 1fr)); }
-      .summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-    }
-    @media (max-width: 900px) {
-      main { grid-template-columns: 1fr; }
-      aside { border-right: 0; border-bottom: 1px solid var(--border); }
-      .editor-top { grid-template-columns: 1fr; }
-      .grid-3, .grid-2 { grid-template-columns: 1fr; }
-    }
-    @media (max-width: 560px) {
-      header, .toolbar, .bar, .editor-actions { align-items: stretch; flex-direction: column; }
-      .search-block, .inventory-row, .boost-row, .defense-row, .stash-row { grid-template-columns: 1fr; }
-      .category-nav { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-      .summary-grid { grid-template-columns: 1fr; }
-    }
+    button { font-family: inherit; cursor: pointer; border: 1px solid var(--border); background: var(--surface-2); color: var(--text); border-radius: 8px; padding: 8px 14px; font-size: 14px; }
+    button:hover { background: var(--surface-3); }
+    button.primary { background: var(--accent); border-color: var(--accent); }
+    button.good { background: var(--accent-2); border-color: var(--accent-2); color: #06210f; }
+    button.danger { background: var(--danger); border-color: var(--danger); }
+    button.sm { padding: 4px 9px; font-size: 12px; }
+    input, select, textarea { font-family: inherit; background: var(--surface-2); border: 1px solid var(--border); color: var(--text); border-radius: 8px; padding: 8px 10px; font-size: 14px; width: 100%; }
+    textarea { resize: vertical; min-height: 90px; font-family: ui-monospace, "Cascadia Code", monospace; font-size: 12px; }
+    label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+    .field { margin-bottom: 12px; }
+    .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .grid3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
+    .layout { display: grid; grid-template-columns: 300px 1fr; min-height: calc(100vh - 57px); }
+    aside { border-right: 1px solid var(--border); background: var(--surface); padding: 14px; overflow-y: auto; }
+    main { padding: 18px 22px; overflow-y: auto; }
+    .userlist { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }
+    .user-card { text-align: left; line-height: 1.35; }
+    .user-card.active { border-color: var(--accent); background: var(--surface-3); }
+    .user-card .uid { font-size: 11px; color: var(--muted); }
+    .pill { display: inline-block; background: var(--surface-3); border: 1px solid var(--border); border-radius: 999px; padding: 2px 9px; font-size: 11px; margin-right: 5px; }
+    .tabs { display: flex; flex-wrap: wrap; gap: 6px; border-bottom: 1px solid var(--border); padding-bottom: 12px; margin-bottom: 16px; }
+    .tab-btn { border-radius: 999px; }
+    .tab-btn.active { background: var(--accent); border-color: var(--accent); }
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+    .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; margin-bottom: 16px; }
+    .card h3 { margin: 0 0 4px; font-size: 15px; }
+    .card .hint { margin: 0 0 14px; }
+    .row { display: grid; grid-template-columns: 1fr 150px; gap: 10px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--border); }
+    .row:last-child { border-bottom: none; }
+    .row .name { font-size: 14px; }
+    .row .name small { display: block; color: var(--muted); font-size: 11px; }
+    .cat-head { margin: 16px 0 4px; font-size: 12px; text-transform: uppercase; letter-spacing: .8px; color: var(--muted); }
+    .pet-card { border: 1px solid var(--border); border-radius: 10px; padding: 12px; margin-bottom: 12px; background: var(--surface-2); }
+    .pet-card .pet-head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+    .pet-card .pet-head strong { flex: 1; }
+    .saved-flash { position: fixed; bottom: 20px; right: 20px; background: var(--accent-2); color: #06210f; padding: 12px 18px; border-radius: 10px; font-weight: 600; opacity: 0; transition: opacity .25s; pointer-events: none; }
+    .saved-flash.show { opacity: 1; }
+    .saved-flash.err { background: var(--danger); color: #fff; }
+    .empty { color: var(--muted); padding: 40px; text-align: center; }
+    .login { max-width: 420px; margin: 80px auto; }
+    .actionbar { display: flex; gap: 10px; align-items: center; margin-bottom: 16px; flex-wrap: wrap; }
+    .actionbar .spacer { flex: 1; }
+    @media (max-width: 820px) { .layout { grid-template-columns: 1fr; } aside { border-right: none; border-bottom: 1px solid var(--border); } .grid2, .grid3 { grid-template-columns: 1fr; } }
   </style>
 </head>
 <body>
-  <div id="login" class="panel">
-    <h1>CahMoney Admin</h1>
-    <p class="muted">Enter your admin token to edit economy data.</p>
-    <input id="token" type="password" autocomplete="current-password" placeholder="ADMIN_TOKEN">
-    <div class="bar" style="margin-top:12px"><button onclick="login()">Login</button><button class="secondary" onclick="toggleTheme()">Dark Mode</button></div>
+  <header class="topbar">
+    <h1><span class="coin">$</span> CahMoney Admin Console</h1>
+    <span class="muted" id="storeNote"></span>
+    <span class="spacer"></span>
+    <button id="logoutBtn" class="sm" style="display:none" onclick="logout()">Lock</button>
+  </header>
+
+  <!-- Login gate -->
+  <div id="loginView" class="login card">
+    <h3>Admin token</h3>
+    <p class="hint muted">Paste the ADMIN_TOKEN from your .env to unlock the console.</p>
+    <div class="field"><input id="tokenInput" type="password" placeholder="ADMIN_TOKEN" autocomplete="off"></div>
+    <button class="primary" onclick="login()">Unlock</button>
+    <p id="loginErr" class="muted" style="color:var(--danger)"></p>
   </div>
 
-  <div id="app" class="hidden">
-    <header>
-      <div class="brand"><h2>CahMoney Admin</h2><span>Economy data editor</span></div>
-      <div class="toolbar">
-        <button class="secondary" onclick="toggleTheme()">Theme</button>
-        <button class="secondary" onclick="refreshSelectedUser()">Refresh Selected</button>
-        <button class="secondary" onclick="logout()">Logout</button>
-      </div>
-    </header>
+  <!-- App -->
+  <div id="appView" class="layout" style="display:none">
+    <aside>
+      <button class="primary" style="width:100%" onclick="createUser()">+ New / Load by ID</button>
+      <div class="field" style="margin-top:12px"><input id="userSearch" placeholder="Search by ID or name" oninput="renderUserList()"></div>
+      <div class="muted" id="userCount"></div>
+      <div class="userlist" id="userList"></div>
+    </aside>
+
     <main>
-      <aside>
-        <div class="panel-kicker">Players</div>
-        <h2>User Lookup</h2>
-        <p class="muted">Search by Discord user ID, then edit their economy profile.</p>
-        <div class="search-block">
-          <input id="search" placeholder="Search user ID" oninput="renderUsers()">
-          <button onclick="newUser()">New</button>
-        </div>
-        <p id="userCount" class="pill"></p>
-        <div id="users"></div>
-      </aside>
-      <section>
-        <div id="empty" class="panel empty">
+      <div id="noSelection" class="empty">Select a player on the left, or load one by ID, to start editing every one of their powers.</div>
+
+      <div id="editor" style="display:none">
+        <div class="actionbar">
           <div>
-            <h2>Select a user</h2>
-            <p class="muted">Choose a user on the left or create a new one.</p>
+            <div id="editorName" style="font-size:18px;font-weight:600"></div>
+            <div class="uid muted" id="editorId"></div>
           </div>
+          <span class="spacer"></span>
+          <span class="pill" id="netWorthPill"></span>
+          <button class="good" onclick="saveUser()">Save changes</button>
+          <button class="danger sm" onclick="deleteUser()">Delete user</button>
         </div>
 
-        <form id="editor" class="hidden" onsubmit="saveUser(event)">
-          <div class="panel editor-top">
-            <div>
-              <div class="panel-kicker">Selected Player</div>
-              <h1 id="editorTitle">User</h1>
-              <p id="editorSubtitle" class="muted">Discord ID and live economy totals.</p>
-              <div class="summary-grid">
-                <div class="stat-card"><span>Net Worth</span><strong id="summaryNet">$0</strong></div>
-                <div class="stat-card"><span>Wallet</span><strong id="summaryWallet">$0</strong></div>
-                <div class="stat-card"><span>Bank</span><strong id="summaryBank">$0</strong></div>
-                <div class="stat-card"><span>Inventory</span><strong id="summaryInventory">0 items</strong></div>
-              </div>
+        <div class="tabs" id="tabBar"></div>
+
+        <!-- ECONOMY -->
+        <section class="tab-panel" data-tab="economy">
+          <div class="card">
+            <h3>Wallet &amp; Bank</h3>
+            <p class="hint muted">Spendable wallet versus stored bank balance.</p>
+            <div class="grid2">
+              <div class="field"><label>Wallet (coins)</label><input id="f_wallet" type="number" min="0"></div>
+              <div class="field"><label>Bank (coins)</label><input id="f_bank" type="number" min="0"></div>
             </div>
-            <div class="editor-actions">
-              <span id="status" class="pill"></span>
-              <button type="submit">Save Changes</button>
-              <button type="button" class="danger" onclick="deleteUser()">Delete User</button>
+            <div class="actionbar">
+              <button class="sm" onclick="bump('f_wallet',1000)">+1k wallet</button>
+              <button class="sm" onclick="bump('f_wallet',100000)">+100k wallet</button>
+              <button class="sm" onclick="bump('f_bank',100000)">+100k bank</button>
+              <button class="sm danger" onclick="setVal('f_wallet',0);setVal('f_bank',0)">Zero out</button>
             </div>
           </div>
+        </section>
 
-          <div class="editor-shell">
-            <nav class="category-nav" aria-label="Editable categories">
-              <button type="button" class="category-tab active" data-section="money" onclick="showAdminSection('money')">Money <span>Basics</span></button>
-              <button type="button" class="category-tab" data-section="bank" onclick="showAdminSection('bank')">Bank <span>Defenses</span></button>
-              <button type="button" class="category-tab" data-section="jobs" onclick="showAdminSection('jobs')">Jobs <span>Work</span></button>
-              <button type="button" class="category-tab" data-section="inventory" onclick="showAdminSection('inventory')">Inventory <span>Items</span></button>
-              <button type="button" class="category-tab" data-section="pets" onclick="showAdminSection('pets')">Pets <span>Idle</span></button>
-              <button type="button" class="category-tab" data-section="boosts" onclick="showAdminSection('boosts')">Boosts <span>Timed</span></button>
-              <button type="button" class="category-tab" data-section="rigging" onclick="showAdminSection('rigging')">Rigging <span>Games</span></button>
-              <button type="button" class="category-tab" data-section="cooldowns" onclick="showAdminSection('cooldowns')">Cooldowns <span>Dates</span></button>
-            </nav>
+        <!-- INVENTORY -->
+        <section class="tab-panel" data-tab="inventory">
+          <div class="card">
+            <h3>Inventory</h3>
+            <p class="hint muted">Set a quantity for any item. Zero removes it. Every catalog item is listed.</p>
+            <div class="actionbar"><button class="sm danger" onclick="clearInventory()">Clear all items</button></div>
+            <div id="inventoryRows"></div>
+          </div>
+        </section>
 
-            <div class="section-body">
-            <div class="panel editor-section active" data-section="money">
-              <div class="panel-head">
-                <div>
-                  <div class="panel-kicker">Money</div>
-                  <h2>Account Basics</h2>
-                  <p class="muted">Core balances, level, and XP for this player.</p>
-                </div>
-              </div>
-              <div class="grid-2">
-                <div><label>Discord User ID</label><input id="userId" placeholder="123456789012345678"></div>
-                <div><label>Experience</label><input id="experience" type="number" min="0"><span id="experienceHint" class="hint"></span></div>
-              </div>
-              <div class="grid-3">
-                <div><label>Wallet Cash</label><input id="wallet" type="number" min="0"><span id="walletHint" class="hint"></span></div>
-                <div><label>Bank Cash</label><input id="bank" type="number" min="0"><span id="bankHint" class="hint"></span></div>
-                <div><label>Bank Level</label><input id="bankLevel" type="number" min="1" max="10"><span id="bankLevelHint" class="hint"></span></div>
-              </div>
+        <!-- XP -->
+        <section class="tab-panel" data-tab="xp">
+          <div class="card">
+            <h3>Experience &amp; Level</h3>
+            <p class="hint muted">Player experience. Level is derived from total XP.</p>
+            <div class="grid2">
+              <div class="field"><label>Experience</label><input id="f_experience" type="number" min="0" oninput="updateLevelHint()"></div>
+              <div class="field"><label>Player level (computed)</label><input id="f_levelHint" disabled></div>
             </div>
-
-            <div class="panel editor-section" data-section="bank">
-              <div class="panel-head">
-                <div>
-                  <div class="panel-kicker">Bank</div>
-                  <h2>Installed Defenses</h2>
-                  <p class="muted">Add, remove, or adjust installed bank defenses.</p>
-                </div>
-                <button type="button" onclick="addDefenseRow('alarm', 1)">Add Defense</button>
-              </div>
-              <div id="bankDefenses" class="row-list"></div>
-            </div>
-
-            <div class="panel editor-section" data-section="jobs">
-              <div class="panel-head">
-                <div>
-                  <div class="panel-kicker">Jobs</div>
-                  <h2>Job Manager</h2>
-                  <p class="muted">Edit the player's job, promotions, fail streak, access, and apply cooldowns.</p>
-                </div>
-              </div>
-              <div class="grid-2">
-                <div><label>Current Job</label><select id="jobId" onchange="updateJobHints()"></select><span id="jobIdHint" class="hint"></span></div>
-                <div><label>Hired Date</label><input id="jobHiredAt" type="datetime-local"><span id="jobHiredAtHint" class="hint"></span></div>
-              </div>
-              <label class="inline-check"><input id="jobHighAccess" type="checkbox"> High-tier job access unlocked</label>
-              <div class="grid-3">
-                <div><label>Job XP</label><input id="jobXp" type="number" min="0"><span id="jobXpHint" class="hint"></span></div>
-                <div><label>Promotion Level</label><input id="jobLevel" type="number" min="1" max="5"><span id="jobLevelHint" class="hint"></span></div>
-                <div><label>Fail Streak</label><input id="jobFailStreak" type="number" min="0" max="3"><span id="jobFailStreakHint" class="hint"></span></div>
-              </div>
-              <div class="grid-3">
-                <div><label>Basic Apply Cooldown</label><input id="jobApplyBasic" type="datetime-local"><span id="jobApplyBasicHint" class="hint"></span></div>
-                <div><label>Medium Apply Cooldown</label><input id="jobApplyMedium" type="datetime-local"><span id="jobApplyMediumHint" class="hint"></span></div>
-                <div><label>High Apply Cooldown</label><input id="jobApplyHigh" type="datetime-local"><span id="jobApplyHighHint" class="hint"></span></div>
-              </div>
-            </div>
-
-            <div class="panel editor-section" data-section="inventory">
-              <div class="panel-head">
-                <div>
-                  <div class="panel-kicker">Items</div>
-                  <h2>Inventory</h2>
-                  <p class="muted">Add, remove, or adjust item quantities by friendly name.</p>
-                </div>
-                <button type="button" onclick="openItemModal()">Add Item</button>
-              </div>
-              <div id="inventory" class="row-list"></div>
-            </div>
-
-            <div class="panel editor-section" data-section="pets">
-              <div class="panel-head">
-                <div>
-                  <div class="panel-kicker">Pets</div>
-                  <h2>Pet Profile</h2>
-                  <p class="muted">Equip pets, tune XP, feeding time, idle hunt time, and stash.</p>
-                </div>
-                <button type="button" onclick="openPetModal()">Add Pet</button>
-              </div>
-              <div class="grid-2">
-                <div><label>Equipped Pet</label><select id="equippedPet"></select></div>
-              </div>
-              <div id="pets"></div>
-            </div>
-
-            <div class="panel editor-section" data-section="boosts">
-              <div class="panel-head">
-                <div>
-                  <div class="panel-kicker">Boosts</div>
-                  <h2>Timed Effects</h2>
-                  <p class="muted">Add or remove active boosts without touching raw user files.</p>
-                </div>
-                <button type="button" onclick="openBoostModal()">Add Boost</button>
-              </div>
-              <div id="boosts" class="row-list"></div>
-            </div>
-
-            <div class="panel editor-section" data-section="rigging">
-              <div class="panel-head">
-                <div>
-                  <div class="panel-kicker">Rigging</div>
-                  <h2>Next Game Outcome</h2>
-                  <p class="muted">Set one controlled outcome for testing or admin correction.</p>
-                </div>
-                <button type="button" class="secondary" onclick="clearRig()">Clear Rig</button>
-              </div>
-              <div class="grid-2">
-                <div><label>Game</label><select id="rigGame"></select></div>
-                <div><label>Outcome</label><select id="rigOutcome"></select></div>
-              </div>
-              <div class="grid-2">
-                <div><label>Highlow Next Roll</label><input id="rigHighlowRoll" type="number" min="0" max="100" placeholder="blank = random"></div>
-              </div>
-              <label><input id="rigEnabled" type="checkbox" style="width:auto;margin-right:8px"> Enable this rig for the user's next matching game</label>
-              <div id="rigPreview" class="rig-card muted">No rig active.</div>
-            </div>
-
-            <div class="panel editor-section" data-section="cooldowns">
-              <div>
-                <div class="panel-kicker">Cooldowns</div>
-                <h2>Cooldown Timestamps</h2>
-                <p class="muted">Edit cooldowns as normal dates. Clear a field to remove that cooldown.</p>
-              </div>
-              <div class="grid-3">
-                <div><label>Beg</label><input id="lastBeg" type="datetime-local"><span id="lastBegHint" class="hint"></span></div>
-                <div><label>Work</label><input id="lastWork" type="datetime-local"><span id="lastWorkHint" class="hint"></span></div>
-                <div><label>Daily</label><input id="lastDaily" type="datetime-local"><span id="lastDailyHint" class="hint"></span></div>
-              </div>
-              <div class="grid-3">
-                <div><label>Rob</label><input id="lastRob" type="datetime-local"><span id="lastRobHint" class="hint"></span></div>
-                <div><label>Bank Rob</label><input id="lastBankrob" type="datetime-local"><span id="lastBankrobHint" class="hint"></span></div>
-                <div><label>Hunt</label><input id="lastHunt" type="datetime-local"><span id="lastHuntHint" class="hint"></span></div>
-              </div>
-              <div class="grid-3">
-                <div><label>Give</label><input id="lastGive" type="datetime-local"><span id="lastGiveHint" class="hint"></span></div>
-                <div><label>Mine</label><input id="lastMine" type="datetime-local"><span id="lastMineHint" class="hint"></span></div>
-              </div>
-            </div>
+            <div class="actionbar">
+              <button class="sm" onclick="bump('f_experience',100);updateLevelHint()">+100 XP</button>
+              <button class="sm" onclick="bump('f_experience',1000);updateLevelHint()">+1000 XP</button>
+              <button class="sm danger" onclick="setVal('f_experience',0);updateLevelHint()">Reset XP</button>
             </div>
           </div>
-        </form>
-      </section>
+        </section>
+
+        <!-- JOBS -->
+        <section class="tab-panel" data-tab="jobs">
+          <div class="card">
+            <h3>Job</h3>
+            <p class="hint muted">Assign a job and tune its progress, or set None to fire them.</p>
+            <div class="grid2">
+              <div class="field"><label>Job</label><select id="f_jobId" onchange="onJobChange()"></select></div>
+              <div class="field"><label>High-tier access</label>
+                <select id="f_jobHighAccess"><option value="false">No</option><option value="true">Yes (Business Card used)</option></select></div>
+            </div>
+            <div id="jobDetail" class="grid3">
+              <div class="field"><label>Job XP</label><input id="f_jobXp" type="number" min="0"></div>
+              <div class="field"><label>Job level (1-5)</label><input id="f_jobLevel" type="number" min="1" max="5"></div>
+              <div class="field"><label>Fail streak (0-3)</label><input id="f_jobFail" type="number" min="0" max="3"></div>
+              <div class="field"><label>Hired at</label><input id="f_jobHired" type="datetime-local"></div>
+            </div>
+          </div>
+          <div class="card">
+            <h3>Job application cooldowns</h3>
+            <p class="hint muted">Next time the player may apply per tier. Clear to allow immediately.</p>
+            <div class="grid3">
+              <div class="field"><label>Basic</label><input id="f_cdJobBasic" type="datetime-local"><button class="sm" onclick="setVal('f_cdJobBasic','')">Clear</button></div>
+              <div class="field"><label>Medium</label><input id="f_cdJobMedium" type="datetime-local"><button class="sm" onclick="setVal('f_cdJobMedium','')">Clear</button></div>
+              <div class="field"><label>High</label><input id="f_cdJobHigh" type="datetime-local"><button class="sm" onclick="setVal('f_cdJobHigh','')">Clear</button></div>
+            </div>
+          </div>
+        </section>
+
+        <!-- PETS -->
+        <section class="tab-panel" data-tab="pets">
+          <div class="card">
+            <h3>Pets</h3>
+            <p class="hint muted">Toggle ownership and tune each pet. Stash and boosts accept JSON.</p>
+            <div class="field"><label>Equipped pet</label><select id="f_equippedPet"></select></div>
+            <div id="petCards"></div>
+          </div>
+        </section>
+
+        <!-- BANK & DEFENSES -->
+        <section class="tab-panel" data-tab="bank">
+          <div class="card">
+            <h3>Bank level</h3>
+            <p class="hint muted">Levels 1-2 = 1 defense slot, 3-5 = 2 slots, 6-10 = 3 slots.</p>
+            <div class="field" style="max-width:220px"><label>Bank level (1-10)</label><input id="f_bankLevel" type="number" min="1" max="10"></div>
+          </div>
+          <div class="card">
+            <h3>Installed bank defenses</h3>
+            <p class="hint muted">Quantity of each defense currently installed. Zero removes it.</p>
+            <div id="defenseRows"></div>
+          </div>
+        </section>
+
+        <!-- BOOSTS -->
+        <section class="tab-panel" data-tab="boosts">
+          <div class="card">
+            <h3>Active boosts</h3>
+            <p class="hint muted">Set an expiry time to activate a boost. Empty = inactive.</p>
+            <div id="boostRows"></div>
+          </div>
+        </section>
+
+        <!-- RIGGING -->
+        <section class="tab-panel" data-tab="rigging">
+          <div class="card">
+            <h3>Rig next game</h3>
+            <p class="hint muted">Force the outcome of the player's next game. "Next Game" matches whatever they play first.</p>
+            <div class="field"><label>Rigging enabled</label>
+              <select id="f_rigEnabled" onchange="onRigToggle()"><option value="false">Off</option><option value="true">On</option></select></div>
+            <div id="rigDetail" class="grid3">
+              <div class="field"><label>Game</label><select id="f_rigGame"></select></div>
+              <div class="field"><label>Outcome</label><select id="f_rigOutcome"></select></div>
+              <div class="field"><label>High-low forced roll (0-100, optional)</label><input id="f_rigRoll" type="number" min="0" max="100" placeholder="leave blank for random"></div>
+            </div>
+          </div>
+        </section>
+
+        <!-- COOLDOWNS -->
+        <section class="tab-panel" data-tab="cooldowns">
+          <div class="card">
+            <h3>Command cooldowns</h3>
+            <p class="hint muted">Last-used timestamps that gate each command. Clear to make a command available right now.</p>
+            <div class="actionbar"><button class="sm danger" onclick="resetAllCooldowns()">Reset all cooldowns</button></div>
+            <div id="cooldownRows" class="grid2"></div>
+          </div>
+        </section>
+
+        <!-- RAW JSON -->
+        <section class="tab-panel" data-tab="raw">
+          <div class="card">
+            <h3>Raw user JSON</h3>
+            <p class="hint muted">The complete record. Edit anything here and Apply to push it into the tabs, then Save.</p>
+            <div class="field"><textarea id="f_rawJson" style="min-height:340px"></textarea></div>
+            <div class="actionbar">
+              <button onclick="applyRawJson()">Apply JSON to tabs</button>
+              <button class="sm" onclick="renderRaw()">Reload from tabs</button>
+            </div>
+          </div>
+        </section>
+      </div>
     </main>
   </div>
 
-  <dialog id="itemModal">
-    <form method="dialog" onsubmit="addItemFromModal(event)">
-      <h3>Add Item</h3>
-      <p class="muted">Choose an item by name.</p>
-      <div class="grid-2">
-        <div><label>Category</label><select id="itemCategory" onchange="filterItemSelect()"></select></div>
-        <div><label>Item</label><select id="itemToAdd"></select></div>
-        <div><label>Quantity</label><input id="itemQuantity" type="number" min="1" value="1"></div>
-      </div>
-      <div class="bar"><button>Add</button><button type="button" class="secondary" onclick="closeDialog('itemModal')">Cancel</button></div>
-    </form>
-  </dialog>
-
-  <dialog id="boostModal">
-    <form method="dialog" onsubmit="addBoostFromModal(event)">
-      <h3>Add Boost</h3>
-      <p class="muted">Duration starts from the moment you save this user.</p>
-      <div class="grid-2">
-        <div><label>Boost</label><select id="boostToAdd"></select></div>
-        <div><label>Minutes</label><input id="boostMinutes" type="number" min="1" value="5"></div>
-      </div>
-      <div class="bar"><button>Add</button><button type="button" class="secondary" onclick="closeDialog('boostModal')">Cancel</button></div>
-    </form>
-  </dialog>
-
-  <dialog id="petModal">
-    <form method="dialog" onsubmit="addPetFromModal(event)">
-      <h3>Add Pet</h3>
-      <p class="muted">Choose a pet to add to this user.</p>
-      <div class="grid-2">
-        <div><label>Pet</label><select id="petToAdd"></select></div>
-        <div><label>Starting XP</label><input id="petStartingXp" type="number" min="0" value="0"></div>
-      </div>
-      <div class="bar"><button>Add</button><button type="button" class="secondary" onclick="closeDialog('petModal')">Cancel</button></div>
-    </form>
-  </dialog>
-
-<script>
-const numberFields = ["wallet","bank","bankLevel","experience"];
-const cooldownFields = ["lastBeg","lastWork","lastDaily","lastRob","lastBankrob","lastHunt","lastGive","lastMine"];
-const jobCooldownFields = [
-  ["basic", "jobApplyBasic"],
-  ["medium", "jobApplyMedium"],
-  ["high", "jobApplyHigh"]
-];
-let users = [];
-let items = [];
-let bankDefenseItems = [];
-let pets = [];
-let jobs = [];
-let jobRules = { promotionXp: 300, maxLevel: 5, failLimit: 3 };
-let boosts = [];
-let rigGames = [];
-let rigOutcomes = [];
-let selected = null;
-let activeBankDefenses = {};
-
-function formatNumber(value) {
-  return Math.max(0, Math.floor(Number(value) || 0)).toLocaleString();
-}
-
-function formatMoney(value) {
-  return "$" + formatNumber(value);
-}
-
-function formatTimestamp(value) {
-  const time = typeof value === "string" && value.includes("T") ? new Date(value).getTime() : Number(value) || 0;
-  if (time <= 0) return "Not set";
-  return new Date(time).toLocaleString();
-}
-
-function displayUser(user) {
-  return user.displayName ? user.displayName + " (" + user.userId + ")" : user.userId;
-}
-
-function applyTheme() {
-  document.body.classList.toggle("dark", localStorage.adminTheme === "dark");
-}
-
-function toggleTheme() {
-  localStorage.adminTheme = localStorage.adminTheme === "dark" ? "light" : "dark";
-  applyTheme();
-}
-
-function authHeaders() {
-  return { authorization: "Bearer " + localStorage.adminToken, "content-type": "application/json" };
-}
-
-async function api(path, options = {}) {
-  const method = (options.method || "GET").toUpperCase();
-  const requestPath = method === "GET"
-    ? path + (path.includes("?") ? "&" : "?") + "_=" + Date.now()
-    : path;
-  const res = await fetch(requestPath, {
-    cache: "no-store",
-    ...options,
-    headers: { ...authHeaders(), ...(options.headers || {}) }
-  });
-  const body = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(body.error || "Request failed");
-  return body;
-}
-
-function login() {
-  localStorage.adminToken = document.getElementById("token").value;
-  boot();
-}
-
-function logout() {
-  localStorage.removeItem("adminToken");
-  location.reload();
-}
-
-async function boot() {
-  applyTheme();
-  if (!localStorage.adminToken) return;
-  document.getElementById("login").classList.add("hidden");
-  document.getElementById("app").classList.remove("hidden");
-  const meta = await api("/api/meta");
-  items = meta.items;
-  bankDefenseItems = meta.bankDefenses;
-  pets = meta.pets;
-  jobs = meta.jobs;
-  jobRules = meta.jobRules || jobRules;
-  boosts = meta.boosts;
-  rigGames = meta.rigGames;
-  rigOutcomes = meta.rigOutcomes;
-  fillCategorySelect();
-  filterItemSelect();
-  fillSelect("petToAdd", pets);
-  fillJobSelect();
-  fillSelect("boostToAdd", boosts);
-  fillSelect("rigGame", rigGames);
-  fillSelect("rigOutcome", rigOutcomes);
-  await loadUsers();
-}
-
-function fillSelect(id, rows) {
-  fillSelectElement(document.getElementById(id), rows);
-}
-
-function fillSelectElement(select, rows) {
-  select.innerHTML = rows.map((row) =>
-    "<option value='" + row.id + "'>" + row.name + " (" + row.id + ")</option>"
-  ).join("");
-}
-
-function fillJobSelect() {
-  const select = document.getElementById("jobId");
-  select.innerHTML = "<option value=''>No Job</option>" + jobs.map((job) =>
-    "<option value='" + job.id + "'>" + job.name + " - " + titleCase(job.tier) + " (" + job.id + ")</option>"
-  ).join("");
-}
-
-function showAdminSection(section) {
-  document.querySelectorAll(".editor-section").forEach((panel) => {
-    panel.classList.toggle("active", panel.dataset.section === section);
-  });
-  document.querySelectorAll(".category-tab").forEach((tab) => {
-    tab.classList.toggle("active", tab.dataset.section === section);
-  });
-}
-
-function titleCase(value) {
-  const text = String(value || "");
-  return text ? text.charAt(0).toUpperCase() + text.slice(1) : "";
-}
-
-function fillCategorySelect() {
-  const categories = ["All", ...new Set(items.map((item) => item.category || "Other"))].sort((a, b) => a === "All" ? -1 : b === "All" ? 1 : a.localeCompare(b));
-  document.getElementById("itemCategory").innerHTML = categories.map((category) =>
-    "<option value='" + category + "'>" + category + "</option>"
-  ).join("");
-}
-
-function filterItemSelect() {
-  const category = document.getElementById("itemCategory").value || "All";
-  const rows = category === "All" ? items : items.filter((item) => item.category === category);
-  fillSelect("itemToAdd", rows);
-}
-
-async function loadUsers() {
-  users = (await api("/api/users")).users;
-  renderUsers();
-  if (!selected) return;
-
-  if (!users.some((user) => user.userId === selected)) {
-    selected = null;
-    document.getElementById("editor").classList.add("hidden");
-    document.getElementById("empty").classList.remove("hidden");
-    return;
-  }
-
-  const data = await api("/api/users/" + selected);
-  showEditor(data.userId, { ...data.user, displayName: data.displayName });
-}
-
-function renderUsers() {
-  const q = document.getElementById("search").value.trim();
-  const root = document.getElementById("users");
-  const filtered = users.filter((user) => user.userId.includes(q));
-  document.getElementById("userCount").textContent = filtered.length + " user" + (filtered.length === 1 ? "" : "s") + " shown";
-  root.innerHTML = "";
-  if (filtered.length === 0) {
-    root.innerHTML = "<div class='panel empty'><div><h3>No users found</h3><p class='muted'>Try another ID or create a new user.</p></div></div>";
-    return;
-  }
-  filtered.forEach((user) => {
-    const el = document.createElement("div");
-    el.className = "user" + (selected === user.userId ? " active" : "");
-    el.innerHTML =
-      "<strong>" + displayUser(user) + "</strong>" +
-      "<div class='muted'>Net worth " + formatMoney(user.wallet + user.bank) + "</div>" +
-      "<div class='user-stats'>" +
-        "<span class='pill'>XP " + formatNumber(user.experience) + "</span>" +
-        "<span class='pill'>Items " + formatNumber(user.items) + "</span>" +
-        "<span class='pill'>Boosts " + formatNumber(user.boosts) + "</span>" +
-      "</div>";
-    el.onclick = () => loadUser(user.userId);
-    root.appendChild(el);
-  });
-}
-
-async function loadUser(userId) {
-  const data = await api("/api/users/" + userId);
-  selected = userId;
-  renderUsers();
-  showEditor(data.userId, { ...data.user, displayName: data.displayName });
-}
-
-async function refreshSelectedUser() {
-  if (!selected) {
-    await loadUsers();
-    return;
-  }
-
-  const data = await api("/api/users/" + selected);
-  showEditor(data.userId, { ...data.user, displayName: data.displayName });
-  status("Refreshed " + (data.displayName || data.userId));
-}
-
-function showEditor(userId, user) {
-  document.getElementById("empty").classList.add("hidden");
-  document.getElementById("editor").classList.remove("hidden");
-  document.getElementById("userId").value = userId;
-  numberFields.forEach((field) => document.getElementById(field).value = user[field] || 0);
-  cooldownFields.forEach((field) => document.getElementById(field).value = Number(user[field]) > 0 ? toDateTimeLocal(user[field]) : "");
-  document.getElementById("bankLevel").value = user.bankLevel || 1;
-  activeBankDefenses = user.bankDefenses || {};
-  document.getElementById("editorTitle").textContent = userId ? (user.displayName ? user.displayName + " (" + userId + ")" : "User " + userId) : "New User";
-  document.getElementById("editorSubtitle").textContent = userId ? "Editing live stored data for this Discord account." : "Create a new stored economy profile.";
-  renderBankDefenses();
-  renderJobs(user);
-  renderRig(user.rig || null);
-  renderInventory(user.inventory || {});
-  renderPets(user.pets || {}, user.equippedPet || null);
-  renderBoosts(user.boosts || {});
-  updateHumanReadableHints();
-  status("");
-}
-
-function updateHumanReadableHints() {
-  const wallet = Number(document.getElementById("wallet").value) || 0;
-  const bank = Number(document.getElementById("bank").value) || 0;
-  const inventoryCount = [...document.querySelectorAll(".inventory-row")].reduce((sum, row) =>
-    sum + (Number(row.querySelector(".item-quantity").value) || 0), 0);
-
-  document.getElementById("summaryNet").textContent = formatMoney(wallet + bank);
-  document.getElementById("summaryWallet").textContent = formatMoney(wallet);
-  document.getElementById("summaryBank").textContent = formatMoney(bank);
-  document.getElementById("summaryInventory").textContent = formatNumber(inventoryCount) + " item" + (inventoryCount === 1 ? "" : "s");
-
-  document.getElementById("walletHint").textContent = formatMoney(wallet);
-  document.getElementById("bankHint").textContent = formatMoney(bank);
-  document.getElementById("experienceHint").textContent = formatNumber(document.getElementById("experience").value) + " XP";
-  document.getElementById("bankLevelHint").textContent = "Level " + Math.min(10, Math.max(1, Number(document.getElementById("bankLevel").value) || 1)) + " of 10";
-
-  ["lastBeg","lastWork","lastDaily","lastRob","lastBankrob","lastHunt","lastGive","lastMine"].forEach((field) => {
-    document.getElementById(field + "Hint").textContent = formatTimestamp(document.getElementById(field).value);
-  });
-}
-
-function renderBankDefenses() {
-  const root = document.getElementById("bankDefenses");
-  const defenses = Object.entries(activeBankDefenses || {}).filter(([, quantity]) => Number(quantity) > 0);
-  root.innerHTML = "";
-  if (defenses.length === 0) {
-    root.innerHTML = "<div class='pill'>No defenses installed</div>";
-    return;
-  }
-  defenses.forEach(([itemId, quantity]) => addDefenseRow(itemId, quantity));
-}
-
-function addDefenseRow(itemId, quantity) {
-  const root = document.getElementById("bankDefenses");
-  root.querySelector(".pill")?.remove();
-  const row = document.createElement("div");
-  row.className = "defense-row";
-  row.innerHTML =
-    "<select class='defense-id'></select>" +
-    "<input class='defense-quantity' type='number' min='0' value='" + (Math.floor(Number(quantity) || 1)) + "'>" +
-    "<button type='button' class='danger'>x</button>";
-  const select = row.querySelector(".defense-id");
-  fillSelectElement(select, bankDefenseItems);
-  select.value = itemId;
-  row.querySelector("button").onclick = () => {
-    row.remove();
-    if (!document.querySelector(".defense-row")) root.innerHTML = "<div class='pill'>No defenses installed</div>";
-  };
-  root.appendChild(row);
-}
-
-function renderRig(rig) {
-  const enabled = Boolean(rig?.game && rig?.outcome);
-  document.getElementById("rigEnabled").checked = enabled;
-  document.getElementById("rigGame").value = rig?.game || "next";
-  document.getElementById("rigOutcome").value = rig?.outcome || "win";
-  document.getElementById("rigHighlowRoll").value = Number.isInteger(rig?.highlowRoll) ? rig.highlowRoll : "";
-  updateRigPreview();
-}
-
-function updateRigPreview() {
-  const enabled = document.getElementById("rigEnabled").checked;
-  const game = document.getElementById("rigGame").value;
-  const outcome = document.getElementById("rigOutcome").value;
-  const highlowRoll = document.getElementById("rigHighlowRoll").value;
-  const preview = document.getElementById("rigPreview");
-
-  preview.textContent = enabled
-    ? "Active: " + game + " -> " + outcome + (game === "highlow" && highlowRoll !== "" ? " | next roll " + highlowRoll + "%" : "")
-    : "No rig active.";
-}
-
-function clearRig() {
-  document.getElementById("rigEnabled").checked = false;
-  updateRigPreview();
-}
-
-function itemName(itemId) {
-  return items.find((item) => item.id === itemId)?.name || itemId;
-}
-
-function boostName(boostId) {
-  return boosts.find((boost) => boost.id === boostId)?.name || boostId;
-}
-
-function petName(petId) {
-  return pets.find((pet) => pet.id === petId)?.name || petId;
-}
-
-function jobName(jobId) {
-  return jobs.find((job) => job.id === jobId)?.name || jobId;
-}
-
-function getJobTier(jobId) {
-  return jobs.find((job) => job.id === jobId)?.tier || "none";
-}
-
-function getJobLevelFromXp(xp) {
-  return Math.min(jobRules.maxLevel || 5, Math.floor(Math.max(0, Number(xp) || 0) / (jobRules.promotionXp || 300)) + 1);
-}
-
-function renderJobs(user) {
-  const job = user.job || {};
-  const jobId = jobs.some((row) => row.id === job.id) ? job.id : "";
-  const xp = Math.max(0, Math.floor(Number(job.xp) || 0));
-  const level = Math.min(jobRules.maxLevel || 5, Math.max(1, Math.floor(Number(job.level) || getJobLevelFromXp(xp))));
-  document.getElementById("jobId").value = jobId;
-  document.getElementById("jobHighAccess").checked = Boolean(user.jobHighAccess);
-  document.getElementById("jobXp").value = xp;
-  document.getElementById("jobLevel").value = level;
-  document.getElementById("jobFailStreak").value = Math.min(jobRules.failLimit || 3, Math.max(0, Math.floor(Number(job.failStreak) || 0)));
-  document.getElementById("jobHiredAt").value = jobId && Number(job.hiredAt) > 0 ? toDateTimeLocal(job.hiredAt) : "";
-  const applyCooldowns = user.jobApplyCooldowns || {};
-  jobCooldownFields.forEach(([tier, id]) => {
-    document.getElementById(id).value = Number(applyCooldowns[tier]) > 0 ? toDateTimeLocal(applyCooldowns[tier]) : "";
-  });
-  updateJobHints();
-}
-
-function updateJobHints() {
-  const jobId = document.getElementById("jobId").value;
-  const xp = Math.max(0, Number(document.getElementById("jobXp").value) || 0);
-  const level = Math.min(jobRules.maxLevel || 5, Math.max(1, Number(document.getElementById("jobLevel").value) || getJobLevelFromXp(xp)));
-  const failStreak = Math.max(0, Number(document.getElementById("jobFailStreak").value) || 0);
-  const nextXp = level >= (jobRules.maxLevel || 5) ? null : level * (jobRules.promotionXp || 300);
-
-  document.getElementById("jobIdHint").textContent = jobId ? titleCase(getJobTier(jobId)) + " job: " + jobName(jobId) : "No current job";
-  document.getElementById("jobXpHint").textContent = formatNumber(xp) + " Job XP";
-  document.getElementById("jobLevelHint").textContent = nextXp === null ? "Max promotion" : "Next promotion at " + formatNumber(nextXp) + " Job XP";
-  document.getElementById("jobFailStreakHint").textContent = failStreak + " of " + (jobRules.failLimit || 3) + " fails before fired";
-  document.getElementById("jobHiredAtHint").textContent = formatTimestamp(document.getElementById("jobHiredAt").value);
-  jobCooldownFields.forEach(([tier, id]) => {
-    document.getElementById(id + "Hint").textContent = titleCase(tier) + ": " + formatTimestamp(document.getElementById(id).value);
-  });
-}
-
-function renderInventory(inventory) {
-  const root = document.getElementById("inventory");
-  root.innerHTML = "";
-  const entries = Object.entries(inventory).sort(([a], [b]) => a.localeCompare(b));
-  if (entries.length === 0) {
-    root.innerHTML = "<div class='pill'>No items in inventory</div>";
-    updateHumanReadableHints();
-    return;
-  }
-  entries.forEach(([itemId, quantity]) => addItemRow(itemId, quantity));
-  updateHumanReadableHints();
-}
-
-function addItemRow(itemId, quantity) {
-  const root = document.getElementById("inventory");
-  root.querySelector(".pill")?.remove();
-  const row = document.createElement("div");
-  row.className = "inventory-row";
-  row.innerHTML = "<select class='item-id'></select><input class='item-quantity' type='number' min='0' value='" + quantity + "'><button type='button' class='danger'>x</button>";
-  const select = row.querySelector(".item-id");
-  fillSelectElement(select, items);
-  select.value = itemId;
-  row.querySelector(".item-quantity").oninput = updateHumanReadableHints;
-  row.querySelector("button").onclick = () => {
-    row.remove();
-    if (!document.querySelector(".inventory-row")) renderInventory({});
-    updateHumanReadableHints();
-  };
-  root.appendChild(row);
-  updateHumanReadableHints();
-}
-
-function renderEquippedPetOptions(equippedPet) {
-  const select = document.getElementById("equippedPet");
-  const rows = [...document.querySelectorAll(".pet-row")].map((row) => row.dataset.petId);
-  select.innerHTML = "<option value=''>None</option>" + rows.map((petId) =>
-    "<option value='" + petId + "'>" + petName(petId) + " (" + petId + ")</option>"
-  ).join("");
-  select.value = rows.includes(equippedPet) ? equippedPet : "";
-}
-
-function renderPets(activePets, equippedPet) {
-  const root = document.getElementById("pets");
-  root.innerHTML = "";
-  const entries = Object.entries(activePets).sort(([a], [b]) => a.localeCompare(b));
-  if (entries.length === 0) root.innerHTML = "<div class='pill'>No pets owned</div>";
-  entries.forEach(([petId, pet]) => addPetRow(petId, pet, false));
-  renderEquippedPetOptions(equippedPet);
-}
-
-function addPetRow(petId, pet = {}, refreshEquipped = true) {
-  const root = document.getElementById("pets");
-  root.querySelector(".pill")?.remove();
-  const existing = [...document.querySelectorAll(".pet-row")].find((row) => row.dataset.petId === petId);
-  if (existing) existing.remove();
-
-  const xp = Math.max(0, Math.floor(Number(pet.xp) || 0));
-  const row = document.createElement("div");
-  row.className = "pet-row";
-  row.dataset.petId = petId;
-  row.innerHTML =
-    "<div class='pet-row-head'><div><strong>" + petName(petId) + "</strong><div class='muted'>" + petId + "</div></div><button type='button' class='danger'>x</button></div>" +
-    "<div class='grid-3'>" +
-      "<div><label>XP</label><input class='pet-xp' type='number' min='0' value='" + xp + "'></div>" +
-      "<div><label>Fed Until Date</label><input class='pet-fed-until' type='datetime-local'></div>" +
-      "<div><label>Last Idle Hunt Date</label><input class='pet-last-idle' type='datetime-local'></div>" +
-    "</div>" +
-    "<div class='grid-2'>" +
-      "<div><label>Stash Items</label><div class='pet-stash-list stack'></div><button type='button' class='secondary add-stash'>Add Stash Item</button></div>" +
-      "<div><label>Boosts JSON</label><textarea class='pet-boosts pet-json'></textarea></div>" +
-    "</div>";
-
-  row.querySelector(".pet-fed-until").value = Number(pet.fedUntil) > 0 ? toDateTimeLocal(pet.fedUntil) : "";
-  row.querySelector(".pet-last-idle").value = Number(pet.lastIdleAt) > 0 ? toDateTimeLocal(pet.lastIdleAt) : "";
-  renderPetStash(row, pet.stash || {});
-  row.querySelector(".pet-boosts").value = JSON.stringify(pet.boosts || {}, null, 2);
-  row.querySelector(".add-stash").onclick = () => addStashRow(row, items[0]?.id || "dirt", 1);
-  row.querySelector("button").onclick = () => {
-    row.remove();
-    if (!document.querySelector(".pet-row")) root.innerHTML = "<div class='pill'>No pets owned</div>";
-    renderEquippedPetOptions(document.getElementById("equippedPet").value);
-  };
-  root.appendChild(row);
-  if (refreshEquipped) renderEquippedPetOptions(document.getElementById("equippedPet").value);
-}
-
-function renderPetStash(petRow, stash) {
-  const list = petRow.querySelector(".pet-stash-list");
-  list.innerHTML = "";
-  const entries = Object.entries(stash).filter(([, quantity]) => Number(quantity) > 0).sort(([a], [b]) => a.localeCompare(b));
-  if (entries.length === 0) {
-    list.innerHTML = "<div class='pill'>No stashed items</div>";
-    return;
-  }
-  entries.forEach(([itemId, quantity]) => addStashRow(petRow, itemId, quantity));
-}
-
-function addStashRow(petRow, itemId, quantity) {
-  const list = petRow.querySelector(".pet-stash-list");
-  list.querySelector(".pill")?.remove();
-  const row = document.createElement("div");
-  row.className = "stash-row";
-  row.innerHTML =
-    "<select class='stash-item-id'></select>" +
-    "<input class='stash-quantity' type='number' min='0' value='" + (Math.floor(Number(quantity) || 1)) + "'>" +
-    "<button type='button' class='danger'>x</button>";
-  const select = row.querySelector(".stash-item-id");
-  fillSelectElement(select, items);
-  select.value = itemId;
-  row.querySelector("button").onclick = () => {
-    row.remove();
-    if (!list.querySelector(".stash-row")) list.innerHTML = "<div class='pill'>No stashed items</div>";
-  };
-  list.appendChild(row);
-}
-
-function renderBoosts(activeBoosts) {
-  const root = document.getElementById("boosts");
-  root.innerHTML = "";
-  const entries = Object.entries(activeBoosts).sort(([a], [b]) => a.localeCompare(b));
-  if (entries.length === 0) {
-    root.innerHTML = "<div class='pill'>No active boosts</div>";
-    return;
-  }
-  entries.forEach(([boostId, expiresAt]) => addBoostRow(boostId, expiresAt));
-}
-
-function addBoostRow(boostId, expiresAt) {
-  const root = document.getElementById("boosts");
-  root.querySelector(".pill")?.remove();
-  const row = document.createElement("div");
-  row.className = "boost-row";
-  row.dataset.boostId = boostId;
-  row.innerHTML = "<div><strong>" + boostName(boostId) + "</strong><div class='muted'>" + boostId + "</div></div><input class='boost-expires' type='datetime-local'><button type='button' class='danger'>x</button>";
-  row.querySelector(".boost-expires").value = toDateTimeLocal(expiresAt);
-  row.querySelector("button").onclick = () => {
-    row.remove();
-    if (!document.querySelector(".boost-row")) renderBoosts({});
-  };
-  root.appendChild(row);
-}
-
-function openItemModal() {
-  document.getElementById("itemQuantity").value = 1;
-  document.getElementById("itemModal").showModal();
-}
-
-function addItemFromModal(event) {
-  event.preventDefault();
-  const itemId = document.getElementById("itemToAdd").value;
-  const quantity = Number(document.getElementById("itemQuantity").value) || 1;
-  const existing = [...document.querySelectorAll(".inventory-row")].find((row) => row.querySelector(".item-id").value === itemId);
-  if (existing) {
-    const input = existing.querySelector(".item-quantity");
-    input.value = (Number(input.value) || 0) + quantity;
-    updateHumanReadableHints();
-  } else {
-    addItemRow(itemId, quantity);
-  }
-  closeDialog("itemModal");
-}
-
-function openPetModal() {
-  document.getElementById("petStartingXp").value = 0;
-  document.getElementById("petModal").showModal();
-}
-
-function addPetFromModal(event) {
-  event.preventDefault();
-  const petId = document.getElementById("petToAdd").value;
-  const xp = Number(document.getElementById("petStartingXp").value) || 0;
-  addPetRow(petId, {
-    id: petId,
-    xp,
-    level: Math.floor(xp / 100) + 1,
-    fedUntil: 0,
-    lastIdleAt: Date.now(),
-    stash: {},
-    boosts: {}
-  });
-  closeDialog("petModal");
-}
-
-function openBoostModal() {
-  document.getElementById("boostMinutes").value = 5;
-  document.getElementById("boostModal").showModal();
-}
-
-function addBoostFromModal(event) {
-  event.preventDefault();
-  const boostId = document.getElementById("boostToAdd").value;
-  const minutes = Number(document.getElementById("boostMinutes").value) || 5;
-  const expiresAt = Date.now() + minutes * 60 * 1000;
-  const existing = [...document.querySelectorAll(".boost-row")].find((row) => row.dataset.boostId === boostId);
-  if (existing) {
-    existing.querySelector(".boost-expires").value = toDateTimeLocal(expiresAt);
-  } else {
-    addBoostRow(boostId, expiresAt);
-  }
-  closeDialog("boostModal");
-}
-
-function closeDialog(id) {
-  document.getElementById(id).close();
-}
-
-function toDateTimeLocal(value) {
-  const date = new Date(Number(value) || Date.now());
-  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
-  return local.toISOString().slice(0, 16);
-}
-
-function fromDateTimeLocal(value) {
-  return value ? new Date(value).getTime() : 0;
-}
-
-function collectUser() {
-  const user = {};
-  numberFields.forEach((field) => user[field] = Number(document.getElementById(field).value) || 0);
-  cooldownFields.forEach((field) => user[field] = fromDateTimeLocal(document.getElementById(field).value));
-  const jobId = document.getElementById("jobId").value;
-  user.jobHighAccess = document.getElementById("jobHighAccess").checked;
-  user.jobApplyCooldowns = {};
-  jobCooldownFields.forEach(([tier, id]) => {
-    const timestamp = fromDateTimeLocal(document.getElementById(id).value);
-    if (timestamp > 0) user.jobApplyCooldowns[tier] = timestamp;
-  });
-  if (jobId) {
-    const requestedLevel = Math.min(jobRules.maxLevel || 5, Math.max(1, Math.floor(Number(document.getElementById("jobLevel").value) || 1)));
-    let xp = Math.max(0, Math.floor(Number(document.getElementById("jobXp").value) || 0));
-    if (getJobLevelFromXp(xp) !== requestedLevel) xp = (requestedLevel - 1) * (jobRules.promotionXp || 300);
-    user.job = {
-      id: jobId,
-      xp,
-      level: requestedLevel,
-      failStreak: Math.min(jobRules.failLimit || 3, Math.max(0, Math.floor(Number(document.getElementById("jobFailStreak").value) || 0))),
-      hiredAt: fromDateTimeLocal(document.getElementById("jobHiredAt").value) || Date.now()
-    };
-  } else {
-    user.job = null;
-  }
-  user.bankDefenses = {};
-  document.querySelectorAll(".defense-row").forEach((row) => {
-    const itemId = row.querySelector(".defense-id").value;
-    const quantity = Number(row.querySelector(".defense-quantity").value) || 0;
-    if (quantity > 0) user.bankDefenses[itemId] = (user.bankDefenses[itemId] || 0) + Math.floor(quantity);
-  });
-  user.inventory = {};
-  document.querySelectorAll(".inventory-row").forEach((row) => {
-    const itemId = row.querySelector(".item-id").value;
-    const quantity = Number(row.querySelector(".item-quantity").value) || 0;
-    if (quantity > 0) user.inventory[itemId] = (user.inventory[itemId] || 0) + Math.floor(quantity);
-  });
-  user.equippedPet = document.getElementById("equippedPet").value || null;
-  user.pets = {};
-  document.querySelectorAll(".pet-row").forEach((row) => {
-    const petId = row.dataset.petId;
-    const xp = Math.max(0, Math.floor(Number(row.querySelector(".pet-xp").value) || 0));
-    const fedUntil = fromDateTimeLocal(row.querySelector(".pet-fed-until").value);
-    const lastIdleAt = fromDateTimeLocal(row.querySelector(".pet-last-idle").value);
-    let stash = {};
-    let boosts = {};
-
-    row.querySelectorAll(".stash-row").forEach((stashRow) => {
-      const itemId = stashRow.querySelector(".stash-item-id").value;
-      const quantity = Number(stashRow.querySelector(".stash-quantity").value) || 0;
-      if (quantity > 0) stash[itemId] = (stash[itemId] || 0) + Math.floor(quantity);
-    });
-
-    try {
-      boosts = JSON.parse(row.querySelector(".pet-boosts").value || "{}");
-    } catch {
-      boosts = {};
+  <div id="flash" class="saved-flash"></div>
+
+  <script>
+    var TOKEN = "";
+    var meta = null;
+    var users = [];
+    var state = { userId: null, user: null };
+
+    var TABS = [
+      ["economy", "Economy"], ["inventory", "Inventory"], ["xp", "XP & Levels"],
+      ["jobs", "Jobs"], ["pets", "Pets"], ["bank", "Bank & Defenses"],
+      ["boosts", "Boosts"], ["rigging", "Rigging"], ["cooldowns", "Cooldowns"], ["raw", "Raw JSON"]
+    ];
+
+    var COOLDOWNS = [
+      ["lastBeg", "Beg"], ["lastWork", "Work"], ["lastDaily", "Daily"], ["lastRob", "Rob"],
+      ["lastBankrob", "Bankrob"], ["lastHunt", "Hunt"], ["lastGive", "Give"], ["lastMine", "Mine"]
+    ];
+
+    // ---------- tiny dom helpers ----------
+    function el(id) { return document.getElementById(id); }
+    function setVal(id, v) { var e = el(id); if (e) e.value = (v === null || v === undefined) ? "" : v; }
+    function getNum(id) { var e = el(id); var n = Math.floor(Number(e && e.value)); return Number.isFinite(n) && n > 0 ? n : 0; }
+    function bump(id, by) { el(id).value = Math.max(0, (Math.floor(Number(el(id).value)) || 0) + by); }
+    function esc(s) { return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+    function flash(msg, isErr) {
+      var f = el("flash"); f.textContent = msg; f.className = "saved-flash show" + (isErr ? " err" : "");
+      setTimeout(function(){ f.className = "saved-flash" + (isErr ? " err" : ""); }, 2200);
     }
 
-    user.pets[petId] = {
-      id: petId,
-      xp,
-      level: Math.floor(xp / 100) + 1,
-      fedUntil,
-      lastIdleAt,
-      stash,
-      boosts
-    };
-  });
-  if (user.equippedPet && !user.pets[user.equippedPet]) user.equippedPet = null;
-  user.boosts = {};
-  document.querySelectorAll(".boost-row").forEach((row) => {
-    const expiresAt = fromDateTimeLocal(row.querySelector(".boost-expires").value);
-    if (expiresAt > 0) user.boosts[row.dataset.boostId] = expiresAt;
-  });
-  user.rig = document.getElementById("rigEnabled").checked
-    ? (() => {
-        const rig = {
-        game: document.getElementById("rigGame").value,
-        outcome: document.getElementById("rigOutcome").value,
-        setAt: Date.now()
-        };
-        const highlowRoll = Number(document.getElementById("rigHighlowRoll").value);
-        if (rig.game === "highlow" && Number.isInteger(highlowRoll) && highlowRoll >= 0 && highlowRoll <= 100) {
-          rig.highlowRoll = highlowRoll;
-        }
-        return rig;
-      })()
-    : null;
-  return user;
-}
+    // ms <-> datetime-local
+    function toLocalInput(ms) {
+      ms = Math.floor(Number(ms) || 0); if (ms <= 0) return "";
+      var d = new Date(ms - new Date().getTimezoneOffset() * 60000);
+      return d.toISOString().slice(0, 16);
+    }
+    function fromLocalInput(id) { var v = el(id).value; if (!v) return 0; var t = new Date(v).getTime(); return Number.isFinite(t) ? t : 0; }
 
-async function saveUser(event) {
-  event.preventDefault();
-  const userId = document.getElementById("userId").value.trim();
-  const exists = users.some((user) => user.userId === userId);
-  const method = exists ? "PUT" : "POST";
-  const path = exists ? "/api/users/" + userId : "/api/users";
-  const payload = exists ? { user: collectUser() } : { userId, user: collectUser() };
-  const result = await api(path, { method, body: JSON.stringify(payload) });
-  selected = result.userId;
-  await loadUsers();
-  status("Saved " + result.userId);
-}
+    // ---------- auth + fetch ----------
+    function headers() { return { authorization: "Bearer " + TOKEN, "content-type": "application/json" }; }
+    function api(method, path, body) {
+      return fetch(path, { method: method, headers: headers(), body: body ? JSON.stringify(body) : undefined })
+        .then(function(r) {
+          if (r.status === 401) { logout(); throw new Error("Unauthorized"); }
+          return r.json().then(function(j) { if (!r.ok) throw new Error(j.error || ("HTTP " + r.status)); return j; });
+        });
+    }
+    function login() {
+      TOKEN = el("tokenInput").value.trim();
+      if (!TOKEN) return;
+      api("GET", "/api/meta").then(function(m) {
+        meta = m;
+        try { localStorage.setItem("cahAdminToken", TOKEN); } catch (e) {}
+        el("loginView").style.display = "none";
+        el("appView").style.display = "grid";
+        el("logoutBtn").style.display = "inline-block";
+        buildTabs(); buildStaticSelects(); loadUsers();
+      }).catch(function(e) { el("loginErr").textContent = e.message; });
+    }
+    function logout() {
+      TOKEN = ""; try { localStorage.removeItem("cahAdminToken"); } catch (e) {}
+      el("appView").style.display = "none"; el("logoutBtn").style.display = "none";
+      el("loginView").style.display = "block"; el("loginErr").textContent = "";
+    }
 
-async function deleteUser() {
-  const userId = document.getElementById("userId").value.trim();
-  if (!confirm("Delete " + userId + "?")) return;
-  await api("/api/users/" + userId, { method: "DELETE" });
-  selected = null;
-  document.getElementById("editor").classList.add("hidden");
-  document.getElementById("empty").classList.remove("hidden");
-  await loadUsers();
-}
+    // ---------- tabs ----------
+    function buildTabs() {
+      var bar = el("tabBar"); bar.innerHTML = "";
+      TABS.forEach(function(t, i) {
+        var b = document.createElement("button");
+        b.className = "tab-btn" + (i === 0 ? " active" : "");
+        b.textContent = t[1]; b.onclick = function() { showTab(t[0]); };
+        b.dataset.tab = t[0]; bar.appendChild(b);
+      });
+      showTab("economy");
+    }
+    function showTab(name) {
+      var btns = document.querySelectorAll(".tab-btn");
+      for (var i = 0; i < btns.length; i++) btns[i].classList.toggle("active", btns[i].dataset.tab === name);
+      var panels = document.querySelectorAll(".tab-panel");
+      for (var j = 0; j < panels.length; j++) panels[j].classList.toggle("active", panels[j].dataset.tab === name);
+      if (name === "raw") renderRaw();
+    }
 
-function newUser() {
-  selected = null;
-  renderUsers();
-  showEditor("", {});
-}
+    function buildStaticSelects() {
+      // jobs
+      var jobSel = el("f_jobId"); jobSel.innerHTML = "<option value=''>None (unemployed)</option>";
+      meta.jobs.forEach(function(j) { jobSel.innerHTML += "<option value='" + j.id + "'>" + esc(j.name) + " (" + j.tier + ")</option>"; });
+      // equipped pet
+      var petSel = el("f_equippedPet"); petSel.innerHTML = "<option value=''>None</option>";
+      meta.pets.forEach(function(p) { petSel.innerHTML += "<option value='" + p.id + "'>" + esc(p.name) + "</option>"; });
+      // rig selects
+      var rg = el("f_rigGame"); rg.innerHTML = "";
+      meta.rigGames.forEach(function(g) { rg.innerHTML += "<option value='" + g.id + "'>" + esc(g.name) + "</option>"; });
+      var ro = el("f_rigOutcome"); ro.innerHTML = "";
+      meta.rigOutcomes.forEach(function(o) { ro.innerHTML += "<option value='" + o.id + "'>" + esc(o.name) + "</option>"; });
+    }
 
-function status(text) {
-  const el = document.getElementById("status");
-  el.textContent = text || "Unsaved changes show here";
-  el.classList.toggle("good", Boolean(text));
-}
+    // ---------- user list ----------
+    function loadUsers() {
+      api("GET", "/api/users").then(function(r) { users = r.users || []; renderUserList(); });
+    }
+    function renderUserList() {
+      var q = el("userSearch").value.trim().toLowerCase();
+      var list = el("userList"); list.innerHTML = "";
+      var shown = users.filter(function(u) {
+        if (!q) return true;
+        return u.userId.indexOf(q) >= 0 || (u.displayName || "").toLowerCase().indexOf(q) >= 0;
+      });
+      el("userCount").textContent = users.length + " player(s)";
+      shown.forEach(function(u) {
+        var b = document.createElement("button");
+        b.className = "user-card" + (u.userId === state.userId ? " active" : "");
+        b.onclick = function() { selectUser(u.userId); };
+        b.innerHTML = "<strong>" + esc(u.displayName || "Unknown") + "</strong>" +
+          "<div class='uid'>" + u.userId + "</div>" +
+          "<div><span class='pill'>" + formatNum(u.wallet + u.bank) + " net</span>" +
+          "<span class='pill'>" + u.items + " items</span></div>";
+        list.appendChild(b);
+      });
+    }
+    function formatNum(n) { return Number(n || 0).toLocaleString(); }
 
-applyTheme();
-boot().catch((error) => alert(error.message));
-document.addEventListener("change", (event) => {
-  if (["rigEnabled", "rigGame", "rigOutcome", "rigHighlowRoll"].includes(event.target.id)) updateRigPreview();
-  if (["jobId","jobHiredAt","jobApplyBasic","jobApplyMedium","jobApplyHigh"].includes(event.target.id)) updateJobHints();
-  if (numberFields.includes(event.target.id) || cooldownFields.includes(event.target.id)) updateHumanReadableHints();
-});
-document.addEventListener("input", (event) => {
-  if (["jobXp","jobLevel","jobFailStreak"].includes(event.target.id)) updateJobHints();
-  if (numberFields.includes(event.target.id) || cooldownFields.includes(event.target.id) || event.target.classList.contains("item-quantity")) updateHumanReadableHints();
-});
-</script>
+    function createUser() {
+      var id = prompt("Discord user ID (snowflake) to create or load:");
+      if (!id) return; id = id.trim();
+      if (!/^[0-9]{10,25}$/.test(id)) { flash("Invalid Discord ID", true); return; }
+      var exists = users.some(function(u) { return u.userId === id; });
+      if (exists) { selectUser(id); return; }
+      api("POST", "/api/users", { userId: id, user: {} }).then(function() { loadUsers(); selectUser(id); flash("User created"); })
+        .catch(function(e) { flash(e.message, true); });
+    }
+    function deleteUser() {
+      if (!state.userId) return;
+      if (!confirm("Delete " + state.userId + " permanently?")) return;
+      api("DELETE", "/api/users/" + state.userId).then(function() {
+        state.userId = null; state.user = null; el("editor").style.display = "none";
+        el("noSelection").style.display = "block"; loadUsers(); flash("User deleted");
+      }).catch(function(e) { flash(e.message, true); });
+    }
+
+    function selectUser(id) {
+      api("GET", "/api/users/" + id).then(function(r) {
+        state.userId = id; state.user = r.user || {};
+        el("noSelection").style.display = "none"; el("editor").style.display = "block";
+        el("editorName").textContent = r.displayName || "Unknown player";
+        el("editorId").textContent = id;
+        renderAll(); renderUserList();
+      }).catch(function(e) { flash(e.message, true); });
+    }
+
+    // ---------- render: state.user -> inputs ----------
+    function renderAll() {
+      var u = state.user;
+      setVal("f_wallet", u.wallet || 0);
+      setVal("f_bank", u.bank || 0);
+      setVal("f_bankLevel", u.bankLevel || 1);
+      setVal("f_experience", u.experience || 0);
+      updateLevelHint();
+      el("netWorthPill").textContent = formatNum((u.wallet || 0) + (u.bank || 0)) + " net worth";
+      renderInventory(); renderDefenses(); renderBoosts(); renderPets();
+      renderJob(); renderCooldowns(); renderRig();
+    }
+
+    function renderInventory() {
+      var inv = state.user.inventory || {};
+      var byCat = {};
+      meta.items.forEach(function(it) { (byCat[it.category] = byCat[it.category] || []).push(it); });
+      var root = el("inventoryRows"); root.innerHTML = "";
+      Object.keys(byCat).sort().forEach(function(cat) {
+        var h = document.createElement("div"); h.className = "cat-head"; h.textContent = cat; root.appendChild(h);
+        byCat[cat].forEach(function(it) {
+          var row = document.createElement("div"); row.className = "row";
+          row.innerHTML = "<div class='name'>" + esc(it.name) + "<small>" + it.id + "</small></div>" +
+            "<input type='number' min='0' class='inv-q' data-item='" + it.id + "' value='" + (inv[it.id] || 0) + "'>";
+          root.appendChild(row);
+        });
+      });
+    }
+    function clearInventory() { var n = document.querySelectorAll(".inv-q"); for (var i=0;i<n.length;i++) n[i].value = 0; }
+
+    function renderDefenses() {
+      var d = state.user.bankDefenses || {};
+      var root = el("defenseRows"); root.innerHTML = "";
+      meta.bankDefenses.forEach(function(it) {
+        var row = document.createElement("div"); row.className = "row";
+        row.innerHTML = "<div class='name'>" + esc(it.name) + "<small>" + it.id + "</small></div>" +
+          "<input type='number' min='0' class='def-q' data-item='" + it.id + "' value='" + (d[it.id] || 0) + "'>";
+        root.appendChild(row);
+      });
+    }
+
+    function renderBoosts() {
+      var b = state.user.boosts || {};
+      var root = el("boostRows"); root.innerHTML = "";
+      meta.boosts.forEach(function(it) {
+        var row = document.createElement("div"); row.className = "row";
+        row.innerHTML = "<div class='name'>" + esc(it.name) + "<small>" + it.id + " — set expiry to activate</small></div>" +
+          "<input type='datetime-local' class='boost-exp' data-boost='" + it.id + "'>";
+        root.appendChild(row);
+        var inp = row.querySelector(".boost-exp"); inp.value = toLocalInput(b[it.id]);
+      });
+    }
+
+    function renderPets() {
+      var pets = state.user.pets || {};
+      setVal("f_equippedPet", state.user.equippedPet || "");
+      var root = el("petCards"); root.innerHTML = "";
+      meta.pets.forEach(function(p) {
+        var owned = !!pets[p.id]; var data = pets[p.id] || {};
+        var card = document.createElement("div"); card.className = "pet-card"; card.dataset.pet = p.id;
+        card.innerHTML =
+          "<div class='pet-head'><input type='checkbox' class='pet-owned' style='width:auto' " + (owned ? "checked" : "") + ">" +
+          "<strong>" + esc(p.name) + "</strong><span class='muted'>" + p.id + "</span></div>" +
+          "<div class='grid3'>" +
+          "<div class='field'><label>XP</label><input type='number' min='0' class='pet-xp' value='" + (data.xp || 0) + "'></div>" +
+          "<div class='field'><label>Fed until</label><input type='datetime-local' class='pet-fed'></div>" +
+          "<div class='field'><label>Last idle at</label><input type='datetime-local' class='pet-idle'></div>" +
+          "</div>" +
+          "<div class='grid2'>" +
+          "<div class='field'><label>Stash (JSON)</label><textarea class='pet-stash'></textarea></div>" +
+          "<div class='field'><label>Boosts (JSON)</label><textarea class='pet-boosts'></textarea></div>" +
+          "</div>";
+        root.appendChild(card);
+        card.querySelector(".pet-fed").value = toLocalInput(data.fedUntil);
+        card.querySelector(".pet-idle").value = toLocalInput(data.lastIdleAt);
+        card.querySelector(".pet-stash").value = JSON.stringify(data.stash || {}, null, 2);
+        card.querySelector(".pet-boosts").value = JSON.stringify(data.boosts || {}, null, 2);
+      });
+    }
+
+    function renderJob() {
+      var j = state.user.job;
+      setVal("f_jobId", j ? j.id : "");
+      setVal("f_jobHighAccess", state.user.jobHighAccess ? "true" : "false");
+      setVal("f_jobXp", j ? (j.xp || 0) : 0);
+      setVal("f_jobLevel", j ? (j.level || 1) : 1);
+      setVal("f_jobFail", j ? (j.failStreak || 0) : 0);
+      el("f_jobHired").value = toLocalInput(j ? j.hiredAt : 0);
+      var cd = state.user.jobApplyCooldowns || {};
+      el("f_cdJobBasic").value = toLocalInput(cd.basic);
+      el("f_cdJobMedium").value = toLocalInput(cd.medium);
+      el("f_cdJobHigh").value = toLocalInput(cd.high);
+      onJobChange();
+    }
+    function onJobChange() { el("jobDetail").style.display = el("f_jobId").value ? "grid" : "none"; }
+
+    function renderCooldowns() {
+      var u = state.user; var root = el("cooldownRows"); root.innerHTML = "";
+      COOLDOWNS.forEach(function(c) {
+        var row = document.createElement("div"); row.className = "field";
+        row.innerHTML = "<label>" + c[1] + " last used</label>" +
+          "<input type='datetime-local' class='cd-input' data-key='" + c[0] + "'>" +
+          "<button class='sm' data-clear='" + c[0] + "'>Clear (ready now)</button>";
+        root.appendChild(row);
+        var inp = row.querySelector(".cd-input"); inp.value = toLocalInput(u[c[0]]);
+        row.querySelector("button").onclick = function() { inp.value = ""; };
+      });
+    }
+    function resetAllCooldowns() { var n = document.querySelectorAll(".cd-input"); for (var i=0;i<n.length;i++) n[i].value = ""; }
+
+    function renderRig() {
+      var r = state.user.rig;
+      setVal("f_rigEnabled", r ? "true" : "false");
+      if (r) { setVal("f_rigGame", r.game || "next"); setVal("f_rigOutcome", r.outcome || "win"); setVal("f_rigRoll", (r.highlowRoll === 0 || r.highlowRoll) ? r.highlowRoll : ""); }
+      else { setVal("f_rigRoll", ""); }
+      onRigToggle();
+    }
+    function onRigToggle() { el("rigDetail").style.display = el("f_rigEnabled").value === "true" ? "grid" : "none"; }
+
+    function updateLevelHint() {
+      // Mirrors getLevel: level = floor(sqrt(xp / 100)) + 1 is NOT used by the bot;
+      // the bot uses a fixed curve, so we just show XP-derived estimate for reference.
+      var xp = getNum("f_experience");
+      setVal("f_levelHint", "~ based on " + formatNum(xp) + " XP (exact level set by bot curve)");
+    }
+
+    function renderRaw() { el("f_rawJson").value = JSON.stringify(collect(), null, 2); }
+    function applyRawJson() {
+      try { state.user = JSON.parse(el("f_rawJson").value); renderAll(); flash("JSON applied to tabs"); }
+      catch (e) { flash("Invalid JSON: " + e.message, true); }
+    }
+
+    // ---------- collect: inputs -> user object ----------
+    function collect() {
+      var u = Object.assign({}, state.user); // preserve unknown fields
+      u.wallet = getNum("f_wallet");
+      u.bank = getNum("f_bank");
+      u.bankLevel = Math.min(10, Math.max(1, Math.floor(Number(el("f_bankLevel").value)) || 1));
+      u.experience = getNum("f_experience");
+
+      // inventory
+      var inv = {}; var iq = document.querySelectorAll(".inv-q");
+      for (var i = 0; i < iq.length; i++) { var q = Math.floor(Number(iq[i].value)) || 0; if (q > 0) inv[iq[i].dataset.item] = q; }
+      u.inventory = inv;
+
+      // defenses
+      var def = {}; var dq = document.querySelectorAll(".def-q");
+      for (var d = 0; d < dq.length; d++) { var dv = Math.floor(Number(dq[d].value)) || 0; if (dv > 0) def[dq[d].dataset.item] = dv; }
+      u.bankDefenses = def;
+
+      // boosts
+      var bo = {}; var be = document.querySelectorAll(".boost-exp");
+      for (var b = 0; b < be.length; b++) { var t = be[b].value ? new Date(be[b].value).getTime() : 0; if (t > 0) bo[be[b].dataset.boost] = t; }
+      u.boosts = bo;
+
+      // pets
+      var pets = {}; var cards = document.querySelectorAll(".pet-card");
+      for (var p = 0; p < cards.length; p++) {
+        var card = cards[p]; if (!card.querySelector(".pet-owned").checked) continue;
+        var pid = card.dataset.pet;
+        var stash = {}, pboosts = {};
+        try { stash = JSON.parse(card.querySelector(".pet-stash").value || "{}"); } catch (e) { throw new Error("Pet " + pid + " stash JSON invalid"); }
+        try { pboosts = JSON.parse(card.querySelector(".pet-boosts").value || "{}"); } catch (e2) { throw new Error("Pet " + pid + " boosts JSON invalid"); }
+        var fed = card.querySelector(".pet-fed").value ? new Date(card.querySelector(".pet-fed").value).getTime() : 0;
+        var idle = card.querySelector(".pet-idle").value ? new Date(card.querySelector(".pet-idle").value).getTime() : 0;
+        pets[pid] = { id: pid, xp: Math.floor(Number(card.querySelector(".pet-xp").value)) || 0, fedUntil: fed, lastIdleAt: idle, stash: stash, boosts: pboosts };
+      }
+      u.pets = pets;
+      var eq = el("f_equippedPet").value; u.equippedPet = (eq && pets[eq]) ? eq : null;
+
+      // job
+      var jobId = el("f_jobId").value;
+      if (jobId) {
+        u.job = { id: jobId, xp: getNum("f_jobXp"), level: Math.min(5, Math.max(1, Math.floor(Number(el("f_jobLevel").value)) || 1)),
+          failStreak: Math.min(3, Math.max(0, Math.floor(Number(el("f_jobFail").value)) || 0)),
+          hiredAt: el("f_jobHired").value ? new Date(el("f_jobHired").value).getTime() : Date.now() };
+      } else { u.job = null; }
+      u.jobHighAccess = el("f_jobHighAccess").value === "true";
+      var jcd = {};
+      var jb = fromLocalInput("f_cdJobBasic"); if (jb > 0) jcd.basic = jb;
+      var jm = fromLocalInput("f_cdJobMedium"); if (jm > 0) jcd.medium = jm;
+      var jh = fromLocalInput("f_cdJobHigh"); if (jh > 0) jcd.high = jh;
+      u.jobApplyCooldowns = jcd;
+
+      // cooldowns
+      var cds = document.querySelectorAll(".cd-input");
+      for (var c = 0; c < cds.length; c++) { u[cds[c].dataset.key] = cds[c].value ? new Date(cds[c].value).getTime() : 0; }
+
+      // rig
+      if (el("f_rigEnabled").value === "true") {
+        var rig = { game: el("f_rigGame").value, outcome: el("f_rigOutcome").value, setAt: Date.now() };
+        var rr = el("f_rigRoll").value;
+        if (rr !== "") { var rn = Math.floor(Number(rr)); if (rn >= 0 && rn <= 100) rig.highlowRoll = rn; }
+        u.rig = rig;
+      } else { u.rig = null; }
+
+      return u;
+    }
+
+    function saveUser() {
+      if (!state.userId) return;
+      var payload;
+      try { payload = collect(); } catch (e) { flash(e.message, true); return; }
+      state.user = payload;
+      api("PUT", "/api/users/" + state.userId, { user: payload }).then(function(r) {
+        state.user = r.user; renderAll(); loadUsers(); flash("Saved");
+      }).catch(function(e) { flash(e.message, true); });
+    }
+
+    // ---------- boot ----------
+    (function() {
+      var saved = null; try { saved = localStorage.getItem("cahAdminToken"); } catch (e) {}
+      if (saved) { el("tokenInput").value = saved; login(); }
+    })();
+  </script>
 </body>
 </html>`;
 }
@@ -1580,3 +1117,4 @@ function startAdminServer() {
 module.exports = {
   startAdminServer
 };
+
